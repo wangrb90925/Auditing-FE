@@ -1,382 +1,246 @@
+import { defineStore } from "pinia";
 import { ref, computed } from "vue";
+import { apiService } from "../lib/api";
 
-const audits = ref([]);
-const isLoading = ref(false);
-const error = ref(null);
+export const useAuditStore = defineStore("audit", () => {
+  const audits = ref([]);
+  const currentAudit = ref(null);
+  const stats = ref(null);
+  const isLoading = ref(false);
+  const error = ref(null);
 
-// API base URL - change this to match your backend URL
-const API_BASE_URL = "http://localhost:5000/api";
+  // Computed properties
+  const completedAudits = computed(() =>
+    audits.value.filter((audit) => audit.status === "completed")
+  );
 
-export const useAuditStore = () => {
+  const pendingAudits = computed(() =>
+    audits.value.filter((audit) => audit.status === "pending")
+  );
+
+  const processingAudits = computed(() =>
+    audits.value.filter((audit) => audit.status === "processing")
+  );
+
+  // Create new audit
   const createAudit = async (auditData) => {
     try {
       isLoading.value = true;
       error.value = null;
 
-      const response = await fetch(`${API_BASE_URL}/audits`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          driverName: auditData.driverName,
-          driverType: auditData.driverType,
-        }),
-      });
+      const response = await apiService.createAudit(auditData);
+      audits.value.unshift(response);
 
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const newAudit = await response.json();
-      audits.value.push(newAudit);
-
-      return newAudit;
+      return { success: true, audit: response };
     } catch (err) {
       error.value = err.message;
-      console.error("Error creating audit:", err);
-      throw err;
+      return { success: false, error: err.message };
     } finally {
       isLoading.value = false;
     }
   };
 
-  const uploadFiles = async (auditId, files) => {
-    try {
-      isLoading.value = true;
-      error.value = null;
-
-      const formData = new FormData();
-      files.forEach((file) => {
-        formData.append("files", file);
-      });
-
-      const response = await fetch(`${API_BASE_URL}/audits/${auditId}/upload`, {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const result = await response.json();
-
-      // Update the audit with file information
-      const auditIndex = audits.value.findIndex((a) => a.id === auditId);
-      if (auditIndex !== -1) {
-        audits.value[auditIndex].files = result.files;
-        audits.value[auditIndex].updatedAt = new Date().toISOString();
-      }
-
-      return result;
-    } catch (err) {
-      error.value = err.message;
-      console.error("Error uploading files:", err);
-      throw err;
-    } finally {
-      isLoading.value = false;
-    }
-  };
-
-  const processAudit = async (auditId) => {
-    try {
-      isLoading.value = true;
-      error.value = null;
-
-      const response = await fetch(
-        `${API_BASE_URL}/audits/${auditId}/process`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-        }
-      );
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const processedAudit = await response.json();
-
-      // Update the audit with processing results
-      const auditIndex = audits.value.findIndex((a) => a.id === auditId);
-      if (auditIndex !== -1) {
-        audits.value[auditIndex] = processedAudit;
-      }
-
-      return processedAudit;
-    } catch (err) {
-      error.value = err.message;
-      console.error("Error processing audit:", err);
-      throw err;
-    } finally {
-      isLoading.value = false;
-    }
-  };
-
+  // Get all audits
   const fetchAudits = async () => {
     try {
       isLoading.value = true;
       error.value = null;
 
-      const response = await fetch(`${API_BASE_URL}/audits`);
+      const response = await apiService.getAudits();
+      audits.value = response;
 
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const auditsData = await response.json();
-      audits.value = auditsData;
+      return { success: true, audits: response };
     } catch (err) {
       error.value = err.message;
-      console.error("Error fetching audits:", err);
-      throw err;
+      return { success: false, error: err.message };
     } finally {
       isLoading.value = false;
     }
   };
 
-  const getAuditById = (id) => {
-    return audits.value.find((audit) => audit.id === id);
-  };
-
-  const fetchAuditById = async (id) => {
+  // Get specific audit
+  const fetchAudit = async (auditId) => {
     try {
       isLoading.value = true;
       error.value = null;
 
-      const response = await fetch(`${API_BASE_URL}/audits/${id}`);
+      const response = await apiService.getAudit(auditId);
+      currentAudit.value = response;
 
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const audit = await response.json();
-
-      // Update or add the audit to the store
-      const auditIndex = audits.value.findIndex((a) => a.id === id);
-      if (auditIndex !== -1) {
-        audits.value[auditIndex] = audit;
-      } else {
-        audits.value.push(audit);
-      }
-
-      return audit;
+      return { success: true, audit: response };
     } catch (err) {
       error.value = err.message;
-      console.error("Error fetching audit:", err);
-      throw err;
+      return { success: false, error: err.message };
     } finally {
       isLoading.value = false;
     }
   };
 
+  // Upload files for an audit
+  const uploadFiles = async (auditId, files) => {
+    try {
+      isLoading.value = true;
+      error.value = null;
+
+      const response = await apiService.uploadFiles(auditId, files);
+
+      // Update the audit in the list
+      const auditIndex = audits.value.findIndex(
+        (audit) => audit.id === auditId
+      );
+      if (auditIndex !== -1) {
+        audits.value[auditIndex].files = [
+          ...audits.value[auditIndex].files,
+          ...response.files,
+        ];
+      }
+
+      // Update current audit if it's the same
+      if (currentAudit.value?.id === auditId) {
+        currentAudit.value.files = [
+          ...currentAudit.value.files,
+          ...response.files,
+        ];
+      }
+
+      return { success: true, files: response.files };
+    } catch (err) {
+      error.value = err.message;
+      return { success: false, error: err.message };
+    } finally {
+      isLoading.value = false;
+    }
+  };
+
+  // Process audit
+  const processAudit = async (auditId) => {
+    try {
+      isLoading.value = true;
+      error.value = null;
+
+      const response = await apiService.processAudit(auditId);
+
+      // Update the audit in the list
+      const auditIndex = audits.value.findIndex(
+        (audit) => audit.id === auditId
+      );
+      if (auditIndex !== -1) {
+        audits.value[auditIndex] = response;
+      }
+
+      // Update current audit if it's the same
+      if (currentAudit.value?.id === auditId) {
+        currentAudit.value = response;
+      }
+
+      return { success: true, audit: response };
+    } catch (err) {
+      error.value = err.message;
+      return { success: false, error: err.message };
+    } finally {
+      isLoading.value = false;
+    }
+  };
+
+  // Download report
   const downloadReport = async (auditId) => {
     try {
-      const response = await fetch(`${API_BASE_URL}/audits/${auditId}/report`);
+      error.value = null;
 
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
+      const blob = await apiService.downloadReport(auditId);
 
-      const blob = await response.blob();
+      // Create download link
       const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `fmcsa-audit-${auditId}.csv`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `fmcsa_audit_${auditId}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
+
+      return { success: true };
     } catch (err) {
       error.value = err.message;
-      console.error("Error downloading report:", err);
-      throw err;
+      return { success: false, error: err.message };
     }
   };
 
-  const getStats = async () => {
+  // Download files
+  const downloadFiles = async (auditId) => {
     try {
-      const response = await fetch(`${API_BASE_URL}/stats`);
+      error.value = null;
 
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
+      const blob = await apiService.downloadFiles(auditId);
 
-      return await response.json();
+      // Create download link
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `audit_files_${auditId}.zip`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+
+      return { success: true };
     } catch (err) {
       error.value = err.message;
-      console.error("Error fetching stats:", err);
-      throw err;
+      return { success: false, error: err.message };
     }
   };
 
-  // Computed properties
-  const pendingAudits = computed(() => {
-    if (!audits.value || !Array.isArray(audits.value)) {
-      return [];
-    }
-    return audits.value.filter((audit) => audit.status === "pending");
-  });
+  // Get statistics
+  const fetchStats = async () => {
+    try {
+      isLoading.value = true;
+      error.value = null;
 
-  const completedAudits = computed(() => {
-    if (!audits.value || !Array.isArray(audits.value)) {
-      return [];
-    }
-    return audits.value.filter((audit) => audit.status === "completed");
-  });
+      const response = await apiService.getStats();
+      stats.value = response;
 
-  const processingAudits = computed(() => {
-    if (!audits.value || !Array.isArray(audits.value)) {
-      return [];
+      return { success: true, stats: response };
+    } catch (err) {
+      error.value = err.message;
+      return { success: false, error: err.message };
+    } finally {
+      isLoading.value = false;
     }
-    return audits.value.filter((audit) => audit.status === "processing");
-  });
+  };
 
-  const failedAudits = computed(() => {
-    if (!audits.value || !Array.isArray(audits.value)) {
-      return [];
-    }
-    return audits.value.filter((audit) => audit.status === "failed");
-  });
+  // Clear error
+  const clearError = () => {
+    error.value = null;
+  };
 
-  // Legacy mock data for fallback (remove in production)
-  const initializeMockData = () => {
-    if (audits.value.length === 0) {
-      audits.value = [
-        {
-          id: "1",
-          driverName: "John Smith",
-          driverType: "long-haul",
-          status: "completed",
-          createdAt: "2024-01-15T10:30:00Z",
-          updatedAt: "2024-01-15T11:45:00Z",
-          violations: 3,
-          summary: {
-            complianceScore: 85,
-            severity: "medium",
-            totalViolations: 3,
-            hosViolations: 2,
-            formViolations: 1,
-            falsificationViolations: 0,
-          },
-          violationsList: [
-            {
-              date: "2024-01-10",
-              type: "HOS_DRIVING_HOURS_EXCEEDED",
-              description: "Driving hours exceeded 11-hour limit: 12.5 hours",
-              severity: "major",
-              penalty: "$2,750",
-            },
-            {
-              date: "2024-01-12",
-              type: "HOS_ON_DUTY_HOURS_EXCEEDED",
-              description: "On-duty hours exceeded 14-hour limit: 15.2 hours",
-              severity: "major",
-              penalty: "$2,750",
-            },
-            {
-              date: "2024-01-14",
-              type: "FORM_MANNER_MISSING_DUTY_STATUS",
-              description: "Missing duty status in driver log entry",
-              severity: "minor",
-              penalty: "$1,000",
-            },
-          ],
-          processingLog: [
-            {
-              timestamp: "2024-01-15T10:30:00Z",
-              type: "info",
-              message: "Starting FMCSA compliance analysis",
-            },
-            {
-              timestamp: "2024-01-15T10:35:00Z",
-              type: "info",
-              message: "Extracted data from 5 files",
-            },
-            {
-              timestamp: "2024-01-15T11:45:00Z",
-              type: "success",
-              message: "Audit completed with 85% compliance score",
-            },
-          ],
-        },
-        {
-          id: "2",
-          driverName: "Sarah Johnson",
-          driverType: "short-haul",
-          status: "processing",
-          createdAt: "2024-01-16T09:15:00Z",
-          updatedAt: "2024-01-16T09:20:00Z",
-          violations: 0,
-          summary: {
-            complianceScore: 0,
-            severity: "low",
-            totalViolations: 0,
-            hosViolations: 0,
-            formViolations: 0,
-            falsificationViolations: 0,
-          },
-          violationsList: [],
-          processingLog: [
-            {
-              timestamp: "2024-01-16T09:15:00Z",
-              type: "info",
-              message: "Starting FMCSA compliance analysis",
-            },
-            {
-              timestamp: "2024-01-16T09:20:00Z",
-              type: "info",
-              message: "Extracted data from 3 files",
-            },
-          ],
-        },
-        {
-          id: "3",
-          driverName: "Mike Wilson",
-          driverType: "exemption",
-          status: "pending",
-          createdAt: "2024-01-16T14:30:00Z",
-          updatedAt: "2024-01-16T14:30:00Z",
-          violations: 0,
-          summary: {
-            complianceScore: 0,
-            severity: "low",
-            totalViolations: 0,
-            hosViolations: 0,
-            formViolations: 0,
-            falsificationViolations: 0,
-          },
-          violationsList: [],
-          processingLog: [],
-        },
-      ];
-    }
+  // Clear current audit
+  const clearCurrentAudit = () => {
+    currentAudit.value = null;
   };
 
   return {
     // State
     audits,
+    currentAudit,
+    stats,
     isLoading,
     error,
 
+    // Computed
+    completedAudits,
+    pendingAudits,
+    processingAudits,
+
     // Actions
     createAudit,
+    fetchAudits,
+    fetchAudit,
     uploadFiles,
     processAudit,
-    fetchAudits,
-    getAuditById,
-    fetchAuditById,
     downloadReport,
-    getStats,
-    initializeMockData,
-
-    // Computed
-    pendingAudits,
-    completedAudits,
-    processingAudits,
-    failedAudits,
+    downloadFiles,
+    fetchStats,
+    clearError,
+    clearCurrentAudit,
   };
-};
+});
