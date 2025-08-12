@@ -1,5 +1,6 @@
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
+from flask_jwt_extended import JWTManager, create_access_token, create_refresh_token, jwt_required, get_jwt_identity
 import os
 import uuid
 import json
@@ -9,6 +10,12 @@ from werkzeug.utils import secure_filename
 from audit_engine import AuditEngine
 from file_processor import FileProcessor
 from fmcsa_rules import FMCSARules
+from database import db, Audit, AuditFile, User, init_db
+from auth import (
+    create_user, authenticate_user, get_user_by_id, get_all_users, 
+    update_user, change_user_role, create_default_admin,
+    admin_required, auditor_required
+)
 import tempfile
 import zipfile
 
@@ -16,26 +23,200 @@ app = Flask(__name__)
 CORS(app)
 
 # Configuration
-UPLOAD_FOLDER = 'uploads'
-ALLOWED_EXTENSIONS = {'pdf', 'png', 'jpg', 'jpeg', 'xlsx', 'xls'}
-MAX_CONTENT_LENGTH = 100 * 1024 * 1024  # 100MB max file size
+from config import Config
 
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-app.config['MAX_CONTENT_LENGTH'] = MAX_CONTENT_LENGTH
+app.config['UPLOAD_FOLDER'] = Config.UPLOAD_FOLDER
+app.config['MAX_CONTENT_LENGTH'] = Config.MAX_CONTENT_LENGTH
+app.config['JWT_SECRET_KEY'] = Config.SECRET_KEY
+app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(hours=24)
+app.config['JWT_REFRESH_TOKEN_EXPIRES'] = timedelta(days=30)
+
+# Initialize JWT
+jwt = JWTManager(app)
 
 # Ensure upload directory exists
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(Config.UPLOAD_FOLDER, exist_ok=True)
+
+# Initialize database
+init_db(app)
+
+# Create default admin user if no users exist
+with app.app_context():
+    create_default_admin()
 
 # Initialize components
 audit_engine = AuditEngine()
 file_processor = FileProcessor()
 fmcsa_rules = FMCSARules()
 
-# In-memory storage for audits (in production, use a database)
-audits = {}
-
 def allowed_file(filename):
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in Config.ALLOWED_EXTENSIONS
+
+# Authentication endpoints
+@app.route('/api/auth/register', methods=['POST'])
+def register():
+    """Register a new user"""
+    try:
+        data = request.get_json()
+        
+        # Validate required fields
+        required_fields = ['username', 'email', 'password', 'first_name', 'last_name']
+        for field in required_fields:
+            if not data.get(field):
+                return jsonify({'error': f'Missing required field: {field}'}), 400
+        
+        # Create user
+        user, error = create_user(
+            username=data['username'],
+            email=data['email'],
+            password=data['password'],
+            first_name=data['first_name'],
+            last_name=data['last_name'],
+            role=data.get('role', 'auditor')  # Default to auditor
+        )
+        
+        if error:
+            return jsonify({'error': error}), 400
+        
+        # Create tokens
+        access_token = create_access_token(identity=user.id)
+        refresh_token = create_refresh_token(identity=user.id)
+        
+        return jsonify({
+            'message': 'User registered successfully',
+            'user': user.to_dict(),
+            'access_token': access_token,
+            'refresh_token': refresh_token
+        }), 201
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/auth/login', methods=['POST'])
+def login():
+    """Login user"""
+    try:
+        data = request.get_json()
+        
+        if not data.get('username') or not data.get('password'):
+            return jsonify({'error': 'Username and password required'}), 400
+        
+        # Authenticate user
+        user, error = authenticate_user(data['username'], data['password'])
+        
+        if error:
+            return jsonify({'error': error}), 401
+        
+        # Create tokens
+        access_token = create_access_token(identity=user.id)
+        refresh_token = create_refresh_token(identity=user.id)
+        
+        return jsonify({
+            'message': 'Login successful',
+            'user': user.to_dict(),
+            'access_token': access_token,
+            'refresh_token': refresh_token
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/auth/refresh', methods=['POST'])
+@jwt_required(refresh=True)
+def refresh():
+    """Refresh access token"""
+    try:
+        current_user_id = get_jwt_identity()
+        user = get_user_by_id(current_user_id)
+        
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+        
+        access_token = create_access_token(identity=user.id)
+        
+        return jsonify({
+            'access_token': access_token,
+            'user': user.to_dict()
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/auth/profile', methods=['GET'])
+@jwt_required()
+def get_profile():
+    """Get current user profile"""
+    try:
+        current_user_id = get_jwt_identity()
+        user = get_user_by_id(current_user_id)
+        
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+        
+        return jsonify(user.to_dict())
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/auth/profile', methods=['PUT'])
+@jwt_required()
+def update_profile():
+    """Update current user profile"""
+    try:
+        current_user_id = get_jwt_identity()
+        data = request.get_json()
+        
+        # Update user
+        user, error = update_user(current_user_id, **data)
+        
+        if error:
+            return jsonify({'error': error}), 400
+        
+        return jsonify({
+            'message': 'Profile updated successfully',
+            'user': user.to_dict()
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# Admin endpoints
+@app.route('/api/admin/users', methods=['GET'])
+@jwt_required()
+@admin_required
+def get_users():
+    """Get all users (admin only)"""
+    try:
+        users = get_all_users()
+        return jsonify([user.to_dict() for user in users])
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/admin/users/<int:user_id>/role', methods=['PUT'])
+@jwt_required()
+@admin_required
+def change_role(user_id):
+    """Change user role (admin only)"""
+    try:
+        data = request.get_json()
+        new_role = data.get('role')
+        
+        if not new_role:
+            return jsonify({'error': 'Role is required'}), 400
+        
+        user, error = change_user_role(user_id, new_role)
+        
+        if error:
+            return jsonify({'error': error}), 400
+        
+        return jsonify({
+            'message': 'User role updated successfully',
+            'user': user.to_dict()
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/health', methods=['GET'])
 def health_check():
@@ -47,48 +228,46 @@ def health_check():
     })
 
 @app.route('/api/audits', methods=['POST'])
+@jwt_required()
+@auditor_required
 def create_audit():
     """Create a new audit"""
     try:
         data = request.get_json()
+        current_user_id = get_jwt_identity()
         
         audit_id = str(uuid.uuid4())
-        audit_data = {
-            'id': audit_id,
-            'driverName': data.get('driverName', ''),
-            'driverType': data.get('driverType', ''),
-            'status': 'pending',
-            'createdAt': datetime.now().isoformat(),
-            'updatedAt': datetime.now().isoformat(),
-            'files': [],
-            'violations': 0,
-            'summary': {
-                'complianceScore': 0,
-                'severity': 'low',
-                'totalViolations': 0,
-                'hosViolations': 0,
-                'formViolations': 0,
-                'falsificationViolations': 0
-            },
-            'violationsList': [],
-            'processingLog': []
-        }
         
-        audits[audit_id] = audit_data
+        # Create new audit in database
+        audit = Audit(
+            id=audit_id,
+            driver_name=data.get('driverName', ''),
+            driver_type=data.get('driverType', ''),
+            status='pending',
+            violations_list=json.dumps([]),
+            processing_log=json.dumps([]),
+            created_by=current_user_id
+        )
         
-        return jsonify(audit_data), 201
+        db.session.add(audit)
+        db.session.commit()
+        
+        return jsonify(audit.to_dict()), 201
         
     except Exception as e:
+        db.session.rollback()
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/audits/<audit_id>/upload', methods=['POST'])
+@jwt_required()
+@auditor_required
 def upload_files(audit_id):
     """Upload files for an audit"""
     try:
-        if audit_id not in audits:
+        # Get audit from database
+        audit = Audit.query.get(audit_id)
+        if not audit:
             return jsonify({'error': 'Audit not found'}), 404
-        
-        audit = audits[audit_id]
         
         if 'files' not in request.files:
             return jsonify({'error': 'No files provided'}), 400
@@ -101,14 +280,22 @@ def upload_files(audit_id):
                 filename = secure_filename(file.filename)
                 file_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{audit_id}_{filename}")
                 file.save(file_path)
+                
+                # Save file info to database
+                audit_file = AuditFile(
+                    audit_id=audit_id,
+                    name=filename,
+                    path=file_path,
+                    size=os.path.getsize(file_path)
+                )
+                db.session.add(audit_file)
                 uploaded_files.append({
                     'name': filename,
                     'path': file_path,
                     'size': os.path.getsize(file_path)
                 })
         
-        audit['files'] = uploaded_files
-        audit['updatedAt'] = datetime.now().isoformat()
+        db.session.commit()
         
         return jsonify({
             'message': f'Successfully uploaded {len(uploaded_files)} files',
@@ -116,42 +303,50 @@ def upload_files(audit_id):
         })
         
     except Exception as e:
+        db.session.rollback()
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/audits/<audit_id>/process', methods=['POST'])
+@jwt_required()
+@auditor_required
 def process_audit(audit_id):
     """Process the audit with AI engine"""
     try:
-        if audit_id not in audits:
+        # Get audit from database
+        audit = Audit.query.get(audit_id)
+        if not audit:
             return jsonify({'error': 'Audit not found'}), 404
         
-        audit = audits[audit_id]
-        
-        if not audit['files']:
+        if not audit.files:
             return jsonify({'error': 'No files uploaded for processing'}), 400
         
         # Update status to processing
-        audit['status'] = 'processing'
-        audit['updatedAt'] = datetime.now().isoformat()
-        audit['processingLog'].append({
+        audit.status = 'processing'
+        processing_log = json.loads(audit.processing_log) if audit.processing_log else []
+        processing_log.append({
             'timestamp': datetime.now().isoformat(),
             'type': 'info',
             'message': 'Starting FMCSA compliance analysis'
         })
+        audit.processing_log = json.dumps(processing_log)
+        db.session.commit()
+        
+        # Convert files to expected format
+        files_data = [{'name': f.name, 'path': f.path, 'size': f.size} for f in audit.files]
         
         # Process files
-        extracted_data = file_processor.process_files(audit['files'])
+        extracted_data = file_processor.process_files(files_data)
         
-        audit['processingLog'].append({
+        processing_log.append({
             'timestamp': datetime.now().isoformat(),
             'type': 'info',
-            'message': f'Extracted data from {len(audit["files"])} files'
+            'message': f'Extracted data from {len(files_data)} files'
         })
         
         # Apply FMCSA rules
-        violations = fmcsa_rules.analyze_compliance(extracted_data, audit['driverType'])
+        violations = fmcsa_rules.analyze_compliance(extracted_data, audit.driver_type)
         
-        audit['processingLog'].append({
+        processing_log.append({
             'timestamp': datetime.now().isoformat(),
             'type': 'info',
             'message': f'Found {len(violations)} FMCSA violations'
@@ -170,67 +365,78 @@ def process_audit(audit_id):
             severity = 'high'
         
         # Update audit with results
-        audit['violations'] = total_violations
-        audit['violationsList'] = violations
-        audit['summary'] = {
-            'complianceScore': compliance_score,
-            'severity': severity,
-            'totalViolations': total_violations,
-            'hosViolations': len([v for v in violations if 'HOS' in v.get('type', '')]),
-            'formViolations': len([v for v in violations if 'form' in v.get('type', '').lower()]),
-            'falsificationViolations': len([v for v in violations if 'falsification' in v.get('type', '').lower()])
-        }
-        audit['status'] = 'completed'
-        audit['updatedAt'] = datetime.now().isoformat()
+        audit.violations = total_violations
+        audit.violations_list = json.dumps(violations)
+        audit.compliance_score = compliance_score
+        audit.severity = severity
+        audit.total_violations = total_violations
+        audit.hos_violations = len([v for v in violations if 'HOS' in v.get('type', '')])
+        audit.form_violations = len([v for v in violations if 'form' in v.get('type', '').lower()])
+        audit.falsification_violations = len([v for v in violations if 'falsification' in v.get('type', '').lower()])
+        audit.status = 'completed'
         
-        audit['processingLog'].append({
+        processing_log.append({
             'timestamp': datetime.now().isoformat(),
             'type': 'success',
             'message': f'Audit completed with {compliance_score}% compliance score'
         })
+        audit.processing_log = json.dumps(processing_log)
         
-        return jsonify(audit)
+        db.session.commit()
+        
+        return jsonify(audit.to_dict())
         
     except Exception as e:
-        if audit_id in audits:
-            audits[audit_id]['status'] = 'failed'
-            audits[audit_id]['processingLog'].append({
+        # Update audit status to failed
+        if audit:
+            audit.status = 'failed'
+            processing_log = json.loads(audit.processing_log) if audit.processing_log else []
+            processing_log.append({
                 'timestamp': datetime.now().isoformat(),
                 'type': 'warning',
                 'message': f'Processing failed: {str(e)}'
             })
+            audit.processing_log = json.dumps(processing_log)
+            db.session.commit()
         
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/audits', methods=['GET'])
+@jwt_required()
+@auditor_required
 def get_audits():
     """Get all audits"""
     try:
-        return jsonify(list(audits.values()))
+        audits_list = Audit.query.all()
+        return jsonify([audit.to_dict() for audit in audits_list])
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/audits/<audit_id>', methods=['GET'])
+@jwt_required()
+@auditor_required
 def get_audit(audit_id):
     """Get specific audit"""
     try:
-        if audit_id not in audits:
+        audit = Audit.query.get(audit_id)
+        if not audit:
             return jsonify({'error': 'Audit not found'}), 404
         
-        return jsonify(audits[audit_id])
+        return jsonify(audit.to_dict())
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/audits/<audit_id>/report', methods=['GET'])
+@jwt_required()
+@auditor_required
 def download_report(audit_id):
     """Download audit report as CSV"""
     try:
-        if audit_id not in audits:
+        audit = Audit.query.get(audit_id)
+        if not audit:
             return jsonify({'error': 'Audit not found'}), 404
         
-        audit = audits[audit_id]
-        
-        if audit['status'] != 'completed':
+        if audit.status != 'completed':
             return jsonify({'error': 'Audit not completed'}), 400
         
         # Create CSV report
@@ -238,20 +444,21 @@ def download_report(audit_id):
         
         # Add audit summary
         report_data.append(['FMCSA Compliance Audit Report'])
-        report_data.append(['Driver Name', audit['driverName']])
-        report_data.append(['Driver Type', audit['driverType']])
-        report_data.append(['Audit Date', audit['createdAt']])
-        report_data.append(['Compliance Score', f"{audit['summary']['complianceScore']}%"])
-        report_data.append(['Total Violations', audit['violations']])
-        report_data.append(['Severity', audit['summary']['severity']])
+        report_data.append(['Driver Name', audit.driver_name])
+        report_data.append(['Driver Type', audit.driver_type])
+        report_data.append(['Audit Date', audit.created_at.isoformat() if audit.created_at else ''])
+        report_data.append(['Compliance Score', f"{audit.compliance_score}%"])
+        report_data.append(['Total Violations', audit.violations])
+        report_data.append(['Severity', audit.severity])
         report_data.append([])
         
         # Add violation details
-        if audit['violationsList']:
+        violations_list = json.loads(audit.violations_list) if audit.violations_list else []
+        if violations_list:
             report_data.append(['Violation Details'])
             report_data.append(['Date', 'Type', 'Description', 'Severity', 'Penalty'])
             
-            for violation in audit['violationsList']:
+            for violation in violations_list:
                 report_data.append([
                     violation.get('date', ''),
                     violation.get('type', ''),
@@ -276,24 +483,25 @@ def download_report(audit_id):
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/audits/<audit_id>/files', methods=['GET'])
+@jwt_required()
+@auditor_required
 def download_files(audit_id):
     """Download all audit files as ZIP"""
     try:
-        if audit_id not in audits:
+        audit = Audit.query.get(audit_id)
+        if not audit:
             return jsonify({'error': 'Audit not found'}), 404
         
-        audit = audits[audit_id]
-        
-        if not audit['files']:
+        if not audit.files:
             return jsonify({'error': 'No files found'}), 404
         
         # Create temporary ZIP file
         temp_zip = tempfile.NamedTemporaryFile(delete=False, suffix='.zip')
         
         with zipfile.ZipFile(temp_zip.name, 'w') as zipf:
-            for file_info in audit['files']:
-                if os.path.exists(file_info['path']):
-                    zipf.write(file_info['path'], file_info['name'])
+            for file_info in audit.files:
+                if os.path.exists(file_info.path):
+                    zipf.write(file_info.path, file_info.name)
         
         return send_file(
             temp_zip.name,
@@ -306,15 +514,17 @@ def download_files(audit_id):
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/stats', methods=['GET'])
+@jwt_required()
+@auditor_required
 def get_stats():
     """Get audit statistics"""
     try:
-        total_audits = len(audits)
-        completed_audits = len([a for a in audits.values() if a['status'] == 'completed'])
-        pending_audits = len([a for a in audits.values() if a['status'] == 'pending'])
-        processing_audits = len([a for a in audits.values() if a['status'] == 'processing'])
+        total_audits = Audit.query.count()
+        completed_audits = Audit.query.filter_by(status='completed').count()
+        pending_audits = Audit.query.filter_by(status='pending').count()
+        processing_audits = Audit.query.filter_by(status='processing').count()
         
-        total_violations = sum(a['violations'] for a in audits.values())
+        total_violations = db.session.query(db.func.sum(Audit.violations)).scalar() or 0
         
         return jsonify({
             'totalAudits': total_audits,

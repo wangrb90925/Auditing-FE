@@ -21,6 +21,9 @@ def check_dependencies():
     required_packages = [
         ('flask', 'flask'),
         ('flask-cors', 'flask_cors'),
+        ('flask-sqlalchemy', 'flask_sqlalchemy'),
+        ('flask-jwt-extended', 'flask_jwt_extended'),
+        ('psycopg2-binary', 'psycopg2'),
         ('PyPDF2', 'PyPDF2'),
         ('pdfplumber', 'pdfplumber'),
         ('pandas', 'pandas'),
@@ -61,6 +64,33 @@ def check_tesseract():
         print("   - Windows: Download from https://github.com/UB-Mannheim/tesseract/wiki")
         print("   - macOS: brew install tesseract")
         print("   - Ubuntu/Debian: sudo apt-get install tesseract-ocr")
+
+def check_database():
+    """Check if PostgreSQL database is accessible"""
+    try:
+        import psycopg2
+        conn = psycopg2.connect(
+            host="localhost",
+            port="5432",
+            database="audit_db",
+            user="postgres",
+            password="password"
+        )
+        cursor = conn.cursor()
+        cursor.execute("SELECT 1;")
+        cursor.fetchone()
+        cursor.close()
+        conn.close()
+        print("✅ PostgreSQL database connection successful")
+    except Exception as e:
+        print("❌ Error: Cannot connect to PostgreSQL database")
+        print(f"   Error: {e}")
+        print("   Please ensure PostgreSQL is running and the database is set up:")
+        print("   1. Install PostgreSQL")
+        print("   2. Run: python init_db.py")
+        print("   3. Ensure database 'audit_db' exists with user 'postgres' and password 'password'")
+        return False
+    return True
 
 def create_directories():
     """Create necessary directories"""
@@ -106,6 +136,10 @@ def main():
     check_dependencies()
     check_tesseract()
     create_directories()
+    
+    # Check database connection
+    if not check_database():
+        sys.exit(1)
     
     print("\n" + "=" * 50)
     print("✅ All checks passed!")

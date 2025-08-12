@@ -94,9 +94,6 @@
             </div>
 
             <div class="text-center">
-              <p class="text-xs text-gray-500 mb-4">
-                Demo credentials: admin / password
-              </p>
               <p class="text-sm text-gray-600">
                 Don't have an account?
                 <router-link
