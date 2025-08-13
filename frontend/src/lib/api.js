@@ -19,7 +19,26 @@ class ApiService {
     const data = await response.json();
 
     if (!response.ok) {
-      throw new Error(data.error || `HTTP error! status: ${response.status}`);
+      let errorMessage = data.error || `HTTP error! status: ${response.status}`;
+
+      // Provide more specific error messages for common status codes
+      switch (response.status) {
+        case 401:
+          errorMessage = "Unauthorized: Please log in again";
+          break;
+        case 403:
+          errorMessage =
+            "Forbidden: You don't have permission to access this resource";
+          break;
+        case 422:
+          errorMessage = "Validation error: The request could not be processed";
+          break;
+        case 500:
+          errorMessage = "Server error: Please try again later";
+          break;
+      }
+
+      throw new Error(errorMessage);
     }
 
     return data;
@@ -35,6 +54,44 @@ class ApiService {
 
     try {
       const response = await fetch(url, config);
+
+      // If we get a 401, try to refresh the token and retry once
+      if (response.status === 401 && endpoint !== "/auth/refresh") {
+        try {
+          const refreshToken = localStorage.getItem("refresh_token");
+          if (refreshToken) {
+            const refreshResponse = await fetch(
+              `${this.baseURL}/auth/refresh`,
+              {
+                method: "POST",
+                headers: {
+                  Authorization: `Bearer ${refreshToken}`,
+                },
+              }
+            );
+
+            if (refreshResponse.ok) {
+              const refreshData = await refreshResponse.json();
+              localStorage.setItem("access_token", refreshData.access_token);
+
+              // Retry the original request with new token
+              const retryConfig = {
+                ...config,
+                headers: {
+                  ...config.headers,
+                  Authorization: `Bearer ${refreshData.access_token}`,
+                },
+              };
+
+              const retryResponse = await fetch(url, retryConfig);
+              return await this.handleResponse(retryResponse);
+            }
+          }
+        } catch (refreshError) {
+          console.warn("Token refresh failed:", refreshError);
+        }
+      }
+
       return await this.handleResponse(response);
     } catch (error) {
       console.error("API request failed:", error);
@@ -110,10 +167,23 @@ class ApiService {
 
   // Audit endpoints
   async createAudit(auditData) {
-    return this.request("/audits", {
-      method: "POST",
-      body: JSON.stringify(auditData),
-    });
+    try {
+      const response = await this.request("/audits", {
+        method: "POST",
+        body: JSON.stringify(auditData),
+      });
+
+      // Validate response structure
+      if (!response || !response.id) {
+        console.error("Invalid response from createAudit:", response);
+        throw new Error("Invalid response from server: missing audit ID");
+      }
+
+      return response;
+    } catch (error) {
+      console.error("Error in createAudit:", error);
+      throw error;
+    }
   }
 
   async getAudits() {
@@ -124,30 +194,59 @@ class ApiService {
     return this.request(`/audits/${auditId}`);
   }
 
+  async deleteAudit(auditId) {
+    return this.request(`/audits/${auditId}`, {
+      method: "DELETE",
+    });
+  }
+
   async uploadFiles(auditId, files) {
-    const formData = new FormData();
-    files.forEach((file) => {
-      formData.append("files", file);
-    });
+    try {
+      // Validate auditId
+      if (!auditId || auditId === "undefined" || auditId === "null") {
+        throw new Error(`Invalid audit ID: ${auditId}`);
+      }
 
-    const token = localStorage.getItem("access_token");
-    const url = `${this.baseURL}/audits/${auditId}/upload`;
+      console.log("Uploading files for audit ID:", auditId);
 
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-      body: formData,
-    });
+      const formData = new FormData();
+      files.forEach((file) => {
+        formData.append("files", file);
+      });
 
-    return this.handleResponse(response);
+      const token = localStorage.getItem("access_token");
+      const url = `${this.baseURL}/audits/${auditId}/upload`;
+
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        body: formData,
+      });
+
+      return this.handleResponse(response);
+    } catch (error) {
+      console.error("Error in uploadFiles:", error);
+      throw error;
+    }
   }
 
   async processAudit(auditId) {
-    return this.request(`/audits/${auditId}/process`, {
-      method: "POST",
-    });
+    try {
+      // Validate auditId
+      if (!auditId || auditId === "undefined" || auditId === "null") {
+        throw new Error(`Invalid audit ID: ${auditId}`);
+      }
+
+      console.log("Processing audit with ID:", auditId);
+      return this.request(`/audits/${auditId}/process`, {
+        method: "POST",
+      });
+    } catch (error) {
+      console.error("Error in processAudit:", error);
+      throw error;
+    }
   }
 
   async downloadReport(auditId) {
@@ -201,5 +300,3 @@ export const apiService = new ApiService();
 
 // Export the class for testing purposes
 export default ApiService;
-
-

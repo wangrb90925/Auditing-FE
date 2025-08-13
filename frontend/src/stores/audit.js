@@ -29,6 +29,14 @@ export const useAuditStore = defineStore("audit", () => {
       error.value = null;
 
       const response = await apiService.createAudit(auditData);
+
+      // Validate response structure
+      if (!response || !response.id) {
+        throw new Error("Invalid response from server: missing audit ID");
+      }
+
+      console.log("Audit created with response:", response);
+
       audits.value.unshift(response);
 
       return { success: true, audit: response };
@@ -218,6 +226,41 @@ export const useAuditStore = defineStore("audit", () => {
     currentAudit.value = null;
   };
 
+  // Delete audit
+  const deleteAudit = async (auditId) => {
+    try {
+      isLoading.value = true;
+      error.value = null;
+
+      const response = await apiService.deleteAudit(auditId);
+
+      // Remove the audit from the list
+      const auditIndex = audits.value.findIndex(
+        (audit) => audit.id === auditId
+      );
+      if (auditIndex !== -1) {
+        audits.value.splice(auditIndex, 1);
+      }
+
+      // Clear current audit if it's the deleted one
+      if (currentAudit.value?.id === auditId) {
+        currentAudit.value = null;
+      }
+
+      return { success: true, message: "Audit deleted successfully" };
+    } catch (err) {
+      error.value = err.message;
+      return { success: false, error: err.message };
+    } finally {
+      isLoading.value = false;
+    }
+  };
+
+  // Get audit by ID
+  const getAuditById = (auditId) => {
+    return audits.value.find((audit) => audit.id === auditId);
+  };
+
   return {
     // State
     audits,
@@ -242,5 +285,7 @@ export const useAuditStore = defineStore("audit", () => {
     fetchStats,
     clearError,
     clearCurrentAudit,
+    deleteAudit,
+    getAuditById,
   };
 });

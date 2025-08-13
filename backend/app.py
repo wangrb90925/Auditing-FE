@@ -236,7 +236,14 @@ def create_audit():
         data = request.get_json()
         current_user_id = get_jwt_identity()
         
+        # Validate required fields
+        if not data.get('driverName'):
+            return jsonify({'error': 'Driver name is required'}), 400
+        if not data.get('driverType'):
+            return jsonify({'error': 'Driver type is required'}), 400
+        
         audit_id = str(uuid.uuid4())
+        print(f"Generated audit ID: {audit_id}")  # Debug logging
         
         # Create new audit in database
         audit = Audit(
@@ -252,10 +259,12 @@ def create_audit():
         db.session.add(audit)
         db.session.commit()
         
+        print(f"Audit created successfully with ID: {audit.id}")  # Debug logging
         return jsonify(audit.to_dict()), 201
         
     except Exception as e:
         db.session.rollback()
+        print(f"Error creating audit: {str(e)}")  # Debug logging
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/audits/<audit_id>/upload', methods=['POST'])
@@ -264,6 +273,12 @@ def create_audit():
 def upload_files(audit_id):
     """Upload files for an audit"""
     try:
+        # Validate audit_id
+        if not audit_id or audit_id == 'undefined' or audit_id == 'null':
+            return jsonify({'error': 'Invalid audit ID'}), 400
+        
+        print(f"Uploading files for audit ID: {audit_id}")  # Debug logging
+        
         # Get audit from database
         audit = Audit.query.get(audit_id)
         if not audit:
@@ -312,6 +327,12 @@ def upload_files(audit_id):
 def process_audit(audit_id):
     """Process the audit with AI engine"""
     try:
+        # Validate audit_id
+        if not audit_id or audit_id == 'undefined' or audit_id == 'null':
+            return jsonify({'error': 'Invalid audit ID'}), 400
+        
+        print(f"Processing audit ID: {audit_id}")  # Debug logging
+        
         # Get audit from database
         audit = Audit.query.get(audit_id)
         if not audit:
@@ -418,6 +439,12 @@ def get_audits():
 def get_audit(audit_id):
     """Get specific audit"""
     try:
+        # Validate audit_id
+        if not audit_id or audit_id == 'undefined' or audit_id == 'null':
+            return jsonify({'error': 'Invalid audit ID'}), 400
+        
+        print(f"Getting audit ID: {audit_id}")  # Debug logging
+        
         audit = Audit.query.get(audit_id)
         if not audit:
             return jsonify({'error': 'Audit not found'}), 404
@@ -426,12 +453,49 @@ def get_audit(audit_id):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/audits/<audit_id>', methods=['DELETE'])
+@jwt_required()
+@auditor_required
+def delete_audit(audit_id):
+    """Delete specific audit"""
+    try:
+        # Validate audit_id
+        if not audit_id or audit_id == 'undefined' or audit_id == 'null':
+            return jsonify({'error': 'Invalid audit ID'}), 400
+        
+        print(f"Deleting audit ID: {audit_id}")  # Debug logging
+        
+        audit = Audit.query.get(audit_id)
+        if not audit:
+            return jsonify({'error': 'Audit not found'}), 404
+        
+        # Delete associated files from storage
+        for file_info in audit.files:
+            if os.path.exists(file_info.path):
+                os.remove(file_info.path)
+        
+        # Delete from database
+        db.session.delete(audit)
+        db.session.commit()
+        
+        return jsonify({'message': 'Audit deleted successfully'}), 200
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/audits/<audit_id>/report', methods=['GET'])
 @jwt_required()
 @auditor_required
 def download_report(audit_id):
     """Download audit report as CSV"""
     try:
+        # Validate audit_id
+        if not audit_id or audit_id == 'undefined' or audit_id == 'null':
+            return jsonify({'error': 'Invalid audit ID'}), 400
+        
+        print(f"Downloading report for audit ID: {audit_id}")  # Debug logging
+        
         audit = Audit.query.get(audit_id)
         if not audit:
             return jsonify({'error': 'Audit not found'}), 404
@@ -488,6 +552,12 @@ def download_report(audit_id):
 def download_files(audit_id):
     """Download all audit files as ZIP"""
     try:
+        # Validate audit_id
+        if not audit_id or audit_id == 'undefined' or audit_id == 'null':
+            return jsonify({'error': 'Invalid audit ID'}), 400
+        
+        print(f"Downloading files for audit ID: {audit_id}")  # Debug logging
+        
         audit = Audit.query.get(audit_id)
         if not audit:
             return jsonify({'error': 'Audit not found'}), 404

@@ -389,28 +389,80 @@ const formatFileSize = (bytes) => {
 };
 
 const handleSubmit = async () => {
-  if (selectedFiles.value.length === 0) return;
+  if (selectedFiles.value.length === 0) {
+    alert("Please select at least one file to upload");
+    return;
+  }
+
+  if (!formData.driverName.trim()) {
+    alert("Please enter a driver name");
+    return;
+  }
+
+  if (!formData.driverType) {
+    alert("Please select a driver type");
+    return;
+  }
 
   isSubmitting.value = true;
 
   try {
     // Step 1: Create audit
     const auditData = {
-      driverName: formData.driverName,
+      driverName: formData.driverName.trim(),
       driverType: formData.driverType,
     };
 
-    const newAudit = await auditStore.createAudit(auditData);
+    console.log("Creating audit with data:", auditData);
+    const result = await auditStore.createAudit(auditData);
+
+    if (!result.success) {
+      throw new Error(result.error || "Failed to create audit");
+    }
+
+    const newAudit = result.audit;
+    console.log("Audit created successfully:", newAudit);
+
+    if (!newAudit || !newAudit.id) {
+      throw new Error("Invalid audit response: missing audit ID");
+    }
+
+    // Validate that the audit ID is a valid UUID
+    const uuidRegex =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(newAudit.id)) {
+      throw new Error(`Invalid audit ID format: ${newAudit.id}`);
+    }
+
+    console.log("Audit ID validation passed:", newAudit.id);
 
     // Step 2: Upload files
-    await auditStore.uploadFiles(newAudit.id, selectedFiles.value);
+    console.log("Uploading files for audit:", newAudit.id);
+    const uploadResult = await auditStore.uploadFiles(
+      newAudit.id,
+      selectedFiles.value
+    );
+
+    if (!uploadResult.success) {
+      throw new Error(uploadResult.error || "Failed to upload files");
+    }
 
     // Step 3: Process audit
-    await auditStore.processAudit(newAudit.id);
+    console.log("Processing audit:", newAudit.id);
+    const processResult = await auditStore.processAudit(newAudit.id);
 
+    if (!processResult.success) {
+      throw new Error(processResult.error || "Failed to process audit");
+    }
+
+    console.log(
+      "Audit completed successfully, redirecting to:",
+      `/audit/${newAudit.id}`
+    );
     router.push(`/audit/${newAudit.id}`);
   } catch (error) {
     console.error("Error creating audit:", error);
+    alert(`Error creating audit: ${error.message}`);
     // You might want to show an error message to the user here
   } finally {
     isSubmitting.value = false;
