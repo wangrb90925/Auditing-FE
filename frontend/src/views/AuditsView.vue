@@ -6,7 +6,7 @@
         <h1 class="text-2xl font-bold text-gray-900">Audit History</h1>
         <p class="text-gray-600">View and manage all audit reports</p>
       </div>
-      <div class="flex space-x-3">
+      <div v-if="userStore.isAuthenticated" class="flex space-x-3">
         <Button variant="outline" @click="exportToCSV">
           <svg
             class="w-4 h-4 mr-2"
@@ -42,214 +42,242 @@
       </div>
     </div>
 
-    <!-- Filters -->
-    <Card>
-      <CardContent class="p-6">
-        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div>
-            <Label for="status">Status</Label>
-            <Select id="status" v-model="filters.status">
-              <option value="">All Statuses</option>
-              <option value="pending">Pending</option>
-              <option value="processing">Processing</option>
-              <option value="completed">Completed</option>
-              <option value="failed">Failed</option>
-            </Select>
-          </div>
-          <div>
-            <Label for="driverType">Driver Type</Label>
-            <Select id="driverType" v-model="filters.driverType">
-              <option value="">All Types</option>
-              <option value="long-haul">Long Haul</option>
-              <option value="short-haul">Short Haul</option>
-              <option value="exemption">Exemption</option>
-            </Select>
-          </div>
-          <div>
-            <Label for="dateRange">Date Range</Label>
-            <Select id="dateRange" v-model="filters.dateRange">
-              <option value="">All Time</option>
-              <option value="today">Today</option>
-              <option value="week">This Week</option>
-              <option value="month">This Month</option>
-              <option value="quarter">This Quarter</option>
-            </Select>
-          </div>
-          <div>
-            <Label for="search">Search</Label>
-            <Input
-              id="search"
-              v-model="filters.search"
-              type="text"
-              placeholder="Search driver name..."
-            />
-          </div>
+    <!-- Welcome Message for Unauthenticated Users -->
+    <div v-if="!userStore.isAuthenticated" class="text-center py-12">
+      <div class="max-w-md mx-auto">
+        <div
+          class="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4"
+        >
+          <DocumentIcon class="w-8 h-8 text-gray-400" />
         </div>
-      </CardContent>
-    </Card>
+        <h3 class="text-lg font-medium text-gray-900 mb-2">
+          Welcome to Audit History
+        </h3>
+        <p class="text-sm text-gray-500 mb-4">
+          Please sign in to view and manage your audit reports
+        </p>
+        <Button as-child>
+          <router-link to="/login">Sign In</router-link>
+        </Button>
+      </div>
+    </div>
 
-    <!-- Audits Table -->
-    <Card>
-      <CardContent class="p-0">
-        <div class="overflow-hidden">
-          <table class="min-w-full divide-y divide-gray-200">
-            <thead class="bg-gray-50">
-              <tr>
-                <th
-                  class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                >
-                  Driver
-                </th>
-                <th
-                  class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                >
-                  Type
-                </th>
-                <th
-                  class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                >
-                  Status
-                </th>
-                <th
-                  class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                >
-                  Violations
-                </th>
-                <th
-                  class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                >
-                  Compliance Score
-                </th>
-                <th
-                  class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                >
-                  Date
-                </th>
-                <th
-                  class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                >
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody class="bg-white divide-y divide-gray-200">
-              <tr
-                v-for="audit in filteredAudits"
-                :key="audit.id"
-                class="hover:bg-gray-50"
-              >
-                <td class="px-6 py-4 whitespace-nowrap">
-                  <div class="text-sm font-medium text-gray-900">
-                    {{ audit.driverName }}
-                  </div>
-                  <div class="text-sm text-gray-500">
-                    {{ audit.files?.length || 0 }} files
-                  </div>
-                </td>
-                <td class="px-6 py-4 whitespace-nowrap">
-                  <Badge variant="secondary">
-                    {{ formatDriverType(audit.driverType) }}
-                  </Badge>
-                </td>
-                <td class="px-6 py-4 whitespace-nowrap">
-                  <Badge :variant="getStatusVariant(audit.status)">
-                    {{ formatStatus(audit.status) }}
-                  </Badge>
-                </td>
-                <td class="px-6 py-4 whitespace-nowrap">
-                  <div class="text-sm text-gray-900">
-                    {{ audit.violations || 0 }}
-                  </div>
-                  <div
-                    v-if="audit.violations > 0"
-                    class="text-xs text-danger-600"
+    <!-- Main Content for Authenticated Users -->
+    <div v-else>
+      <!-- Filters -->
+      <Card>
+        <CardContent class="p-6">
+          <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div>
+              <Label for="status">Status</Label>
+              <Select id="status" v-model="filters.status">
+                <option value="">All Statuses</option>
+                <option value="pending">Pending</option>
+                <option value="processing">Processing</option>
+                <option value="completed">Completed</option>
+                <option value="failed">Failed</option>
+              </Select>
+            </div>
+            <div>
+              <Label for="driverType">Driver Type</Label>
+              <Select id="driverType" v-model="filters.driverType">
+                <option value="">All Types</option>
+                <option value="long-haul">Long Haul</option>
+                <option value="short-haul">Short Haul</option>
+                <option value="exemption">Exemption</option>
+              </Select>
+            </div>
+            <div>
+              <Label for="dateRange">Date Range</Label>
+              <Select id="dateRange" v-model="filters.dateRange">
+                <option value="">All Time</option>
+                <option value="today">Today</option>
+                <option value="week">This Week</option>
+                <option value="month">This Month</option>
+                <option value="quarter">This Quarter</option>
+              </Select>
+            </div>
+            <div>
+              <Label for="search">Search</Label>
+              <Input
+                id="search"
+                v-model="filters.search"
+                type="text"
+                placeholder="Search driver name..."
+              />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <!-- Audits Table -->
+      <Card>
+        <CardContent class="p-0">
+          <div class="overflow-hidden">
+            <table class="min-w-full divide-y divide-gray-200">
+              <thead class="bg-gray-50">
+                <tr>
+                  <th
+                    class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
                   >
-                    {{ audit.violationsList?.length || 0 }} violations found
-                  </div>
-                </td>
-                <td class="px-6 py-4 whitespace-nowrap">
-                  <div v-if="audit.summary" class="flex items-center">
-                    <div class="flex-1 bg-gray-200 rounded-full h-2 mr-2">
-                      <div
-                        :class="
-                          getComplianceColor(audit.summary.complianceScore)
-                        "
-                        class="h-2 rounded-full"
-                        :style="{ width: audit.summary.complianceScore + '%' }"
-                      ></div>
+                    Driver
+                  </th>
+                  <th
+                    class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                  >
+                    Type
+                  </th>
+                  <th
+                    class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                  >
+                    Status
+                  </th>
+                  <th
+                    class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                  >
+                    Violations
+                  </th>
+                  <th
+                    class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                  >
+                    Compliance Score
+                  </th>
+                  <th
+                    class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                  >
+                    Date
+                  </th>
+                  <th
+                    class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                  >
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+              <tbody class="bg-white divide-y divide-gray-200">
+                <tr
+                  v-for="audit in filteredAudits"
+                  :key="audit.id"
+                  class="hover:bg-gray-50"
+                >
+                  <td class="px-6 py-4 whitespace-nowrap">
+                    <div class="text-sm font-medium text-gray-900">
+                      {{ audit.driverName }}
                     </div>
-                    <span class="text-sm text-gray-900"
-                      >{{ audit.summary.complianceScore }}%</span
+                    <div class="text-sm text-gray-500">
+                      {{ audit.files?.length || 0 }} files
+                    </div>
+                  </td>
+                  <td class="px-6 py-4 whitespace-nowrap">
+                    <Badge variant="secondary">
+                      {{ formatDriverType(audit.driverType) }}
+                    </Badge>
+                  </td>
+                  <td class="px-6 py-4 whitespace-nowrap">
+                    <Badge :variant="getStatusVariant(audit.status)">
+                      {{ formatStatus(audit.status) }}
+                    </Badge>
+                  </td>
+                  <td class="px-6 py-4 whitespace-nowrap">
+                    <div class="text-sm text-gray-900">
+                      {{ audit.violations || 0 }}
+                    </div>
+                    <div
+                      v-if="audit.violations > 0"
+                      class="text-xs text-danger-600"
                     >
-                  </div>
-                  <div v-else class="text-sm text-gray-500">-</div>
-                </td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  {{ formatDate(audit.createdAt) }}
-                </td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                  <div class="flex space-x-2">
-                    <Button variant="ghost" size="sm" as-child>
-                      <router-link :to="`/audit/${audit.id}`">View</router-link>
-                    </Button>
-                    <Button
-                      v-if="audit.status === 'completed'"
-                      variant="ghost"
-                      size="sm"
-                      @click="downloadReport(audit.id)"
-                    >
-                      Download
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      @click="deleteAudit(audit.id)"
-                      class="text-danger-600 hover:text-danger-800"
-                    >
-                      Delete
-                    </Button>
-                  </div>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        <!-- Empty State -->
-        <div v-if="filteredAudits.length === 0" class="text-center py-12">
-          <svg
-            class="mx-auto h-12 w-12 text-gray-400"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              stroke-width="2"
-              d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-            />
-          </svg>
-          <h3 class="mt-2 text-sm font-medium text-gray-900">
-            No audits found
-          </h3>
-          <p class="mt-1 text-sm text-gray-500">
-            Get started by uploading some files for audit.
-          </p>
-          <div class="mt-6">
-            <Button as-child>
-              <router-link to="/upload">Upload Files</router-link>
-            </Button>
+                      {{ audit.violationsList?.length || 0 }} violations found
+                    </div>
+                  </td>
+                  <td class="px-6 py-4 whitespace-nowrap">
+                    <div v-if="audit.summary" class="flex items-center">
+                      <div class="flex-1 bg-gray-200 rounded-full h-2 mr-2">
+                        <div
+                          :class="
+                            getComplianceColor(audit.summary.complianceScore)
+                          "
+                          class="h-2 rounded-full"
+                          :style="{
+                            width: audit.summary.complianceScore + '%',
+                          }"
+                        ></div>
+                      </div>
+                      <span class="text-sm text-gray-900"
+                        >{{ audit.summary.complianceScore }}%</span
+                      >
+                    </div>
+                    <div v-else class="text-sm text-gray-500">-</div>
+                  </td>
+                  <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    {{ formatDate(audit.createdAt) }}
+                  </td>
+                  <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                    <div class="flex space-x-2">
+                      <Button variant="ghost" size="sm" as-child>
+                        <router-link :to="`/audit/${audit.id}`"
+                          >View</router-link
+                        >
+                      </Button>
+                      <Button
+                        v-if="audit.status === 'completed'"
+                        variant="ghost"
+                        size="sm"
+                        @click="downloadReport(audit.id)"
+                      >
+                        Download
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        @click="deleteAudit(audit.id)"
+                        class="text-danger-600 hover:text-danger-800"
+                      >
+                        Delete
+                      </Button>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
           </div>
-        </div>
-      </CardContent>
-    </Card>
+
+          <!-- Empty State -->
+          <div v-if="filteredAudits.length === 0" class="text-center py-12">
+            <svg
+              class="mx-auto h-12 w-12 text-gray-400"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+              />
+            </svg>
+            <h3 class="mt-2 text-sm font-medium text-gray-900">
+              No audits found
+            </h3>
+            <p class="mt-1 text-sm text-gray-500">
+              Get started by uploading some files for audit.
+            </p>
+            <div class="mt-6">
+              <Button as-child>
+                <router-link to="/upload">Upload Files</router-link>
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { reactive, computed } from "vue";
+import { computed, reactive, watch } from "vue";
 import { useAuditStore } from "../stores/audit";
+import { useUserStore } from "../stores/user";
 import Button from "@/components/ui/button.vue";
 import Input from "@/components/ui/input.vue";
 import Label from "@/components/ui/label.vue";
@@ -257,11 +285,54 @@ import Select from "@/components/ui/select.vue";
 import Card from "@/components/ui/card.vue";
 import CardContent from "@/components/ui/card-content.vue";
 import Badge from "@/components/ui/badge.vue";
+import {
+  PlusIcon,
+  ChartIcon,
+  ClockIcon,
+  CheckIcon,
+  WarningIcon,
+  DownloadIcon,
+  UploadIcon,
+  DocumentIcon,
+  InfoIcon,
+  SearchIcon,
+  FilterIcon,
+} from "@/assets/icons";
 
 const auditStore = useAuditStore();
+const userStore = useUserStore();
 
-// Initialize mock data if needed
-auditStore.initializeMockData();
+// Initialize data - try to fetch from API if authenticated
+const initializeData = async () => {
+  // Check if user is authenticated
+  if (!userStore.isAuthenticated) {
+    console.log("User not authenticated, no data to display");
+    return;
+  }
+
+  try {
+    // Try to fetch real data from API
+    await auditStore.fetchAudits();
+  } catch (error) {
+    console.log("API not available or authentication failed");
+    // Don't initialize any data, let the UI show "no data" message
+  }
+};
+
+// Watch for authentication state changes
+watch(
+  () => userStore.isAuthenticated,
+  (isAuthenticated) => {
+    if (isAuthenticated) {
+      // User just logged in, try to fetch real data
+      initializeData();
+    }
+    // If user logs out, no need to do anything - audits will be empty
+  }
+);
+
+// Initialize data when component mounts
+initializeData();
 
 const filters = reactive({
   status: "",

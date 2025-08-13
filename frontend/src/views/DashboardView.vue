@@ -11,6 +11,7 @@
         </p>
       </div>
       <Button
+        v-if="userStore.isAuthenticated"
         as-child
         class="bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary/70 shadow-lg"
       >
@@ -22,7 +23,10 @@
     </div>
 
     <!-- Stats Cards -->
-    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+    <div
+      v-if="userStore.isAuthenticated"
+      class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6"
+    >
       <Card
         class="bg-gradient-to-br from-blue-50 to-blue-100/50 dark:from-blue-950/50 dark:to-blue-900/30 border-blue-200/50 dark:border-blue-800/50"
       >
@@ -120,6 +124,46 @@
       </Card>
     </div>
 
+    <!-- No Data Message for Stats -->
+    <div v-else-if="!userStore.isAuthenticated" class="text-center py-12">
+      <div class="max-w-md mx-auto">
+        <div
+          class="w-16 h-16 bg-muted/30 rounded-full flex items-center justify-center mx-auto mb-4"
+        >
+          <ChartIcon class="w-8 h-8 text-muted-foreground" />
+        </div>
+        <h3 class="text-lg font-medium text-muted-foreground mb-2">
+          Welcome to FMCSA Compliance Dashboard
+        </h3>
+        <p class="text-sm text-muted-foreground mb-4">
+          Please sign in to view your audit statistics and compliance data
+        </p>
+        <Button as-child>
+          <router-link to="/login">Sign In</router-link>
+        </Button>
+      </div>
+    </div>
+
+    <!-- No Data Message for Empty Audits -->
+    <div v-else class="text-center py-12">
+      <div class="max-w-md mx-auto">
+        <div
+          class="w-16 h-16 bg-muted/30 rounded-full flex items-center justify-center mx-auto mb-4"
+        >
+          <ChartIcon class="w-8 h-8 text-muted-foreground" />
+        </div>
+        <h3 class="text-lg font-medium text-muted-foreground mb-2">
+          No Audit Data Available
+        </h3>
+        <p class="text-sm text-muted-foreground mb-4">
+          Start by uploading driver logs for your first HOS compliance audit
+        </p>
+        <Button as-child>
+          <router-link to="/upload">Upload Driver Logs</router-link>
+        </Button>
+      </div>
+    </div>
+
     <!-- Recent Audits -->
     <Card class="bg-card/50 backdrop-blur-sm border-border/50">
       <CardHeader>
@@ -130,13 +174,19 @@
               Latest FMCSA compliance assessments
             </p>
           </div>
-          <Button variant="outline" as-child class="rounded-lg">
+          <Button
+            v-if="audits.length > 0"
+            variant="outline"
+            as-child
+            class="rounded-lg"
+          >
             <router-link to="/audits">View all</router-link>
           </Button>
         </div>
       </CardHeader>
       <CardContent>
-        <div class="overflow-hidden">
+        <!-- Show table only when there are audits -->
+        <div v-if="audits.length > 0" class="overflow-hidden">
           <table class="min-w-full divide-y divide-border/50">
             <thead class="bg-muted/30">
               <tr>
@@ -173,6 +223,7 @@
               </tr>
             </thead>
             <tbody class="bg-transparent divide-y divide-border/30">
+              <!-- Audit rows -->
               <tr
                 v-for="audit in recentAudits"
                 :key="audit.id"
@@ -232,11 +283,36 @@
             </tbody>
           </table>
         </div>
+
+        <!-- No data message when there are no audits -->
+        <div v-else class="text-center py-12">
+          <div class="flex flex-col items-center space-y-3">
+            <div
+              class="w-16 h-16 bg-muted/30 rounded-full flex items-center justify-center"
+            >
+              <DocumentIcon class="w-8 h-8 text-muted-foreground" />
+            </div>
+            <div>
+              <p class="text-lg font-medium text-muted-foreground">
+                No audits found
+              </p>
+              <p class="text-sm text-muted-foreground">
+                Start by uploading driver logs for your first HOS audit
+              </p>
+            </div>
+            <Button as-child variant="outline" class="mt-2">
+              <router-link to="/upload">Upload Driver Logs</router-link>
+            </Button>
+          </div>
+        </div>
       </CardContent>
     </Card>
 
     <!-- Quick Actions -->
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 !mb-20">
+    <div
+      v-if="userStore.isAuthenticated"
+      class="grid grid-cols-1 md:grid-cols-3 gap-6 !mb-20"
+    >
       <Card
         class="bg-gradient-to-br from-primary/5 to-primary/10 border-primary/20 hover:shadow-lg transition-all duration-300 group"
       >
@@ -324,8 +400,9 @@
 </template>
 
 <script setup>
-import { computed } from "vue";
+import { computed, watch } from "vue";
 import { useAuditStore } from "../stores/audit";
+import { useUserStore } from "../stores/user";
 import Button from "@/components/ui/button.vue";
 import Card from "@/components/ui/card.vue";
 import CardHeader from "@/components/ui/card-header.vue";
@@ -344,9 +421,39 @@ import {
 } from "@/assets/icons";
 
 const auditStore = useAuditStore();
+const userStore = useUserStore();
 
-// Initialize mock data if needed
-auditStore.initializeMockData();
+// Initialize data - try to fetch from API if authenticated
+const initializeData = async () => {
+  // Check if user is authenticated
+  if (!userStore.isAuthenticated) {
+    console.log("User not authenticated, no data to display");
+    return;
+  }
+
+  try {
+    // Try to fetch real data from API
+    await auditStore.fetchAudits();
+  } catch (error) {
+    console.log("API not available or authentication failed");
+    // Don't initialize any data, let the UI show "no data" message
+  }
+};
+
+// Watch for authentication state changes
+watch(
+  () => userStore.isAuthenticated,
+  (isAuthenticated) => {
+    if (isAuthenticated) {
+      // User just logged in, try to fetch real data
+      initializeData();
+    }
+    // If user logs out, no need to do anything - audits will be empty
+  }
+);
+
+// Initialize data when component mounts
+initializeData();
 
 const audits = computed(() => {
   return auditStore.audits || [];
