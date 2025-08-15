@@ -12,6 +12,7 @@ frontend/dist
 frontend/dist-ssr
 *.local
 backend/venv
+backend/uploads
 
 # Editor directories and files
 .vscode/*

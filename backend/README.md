@@ -19,7 +19,12 @@ backend/
 ├── audit_engine.py     # Main audit processing engine
 ├── file_processor.py   # File parsing and data extraction
 ├── fmcsa_rules.py      # FMCSA compliance rules engine
+├── database.py         # Database models and configuration
+├── config.py           # Application configuration
+├── init_db.py          # Database initialization script
+├── migrate.py          # Database migration script
 ├── requirements.txt    # Python dependencies
+├── DATABASE_SETUP.md   # Database setup guide
 └── README.md          # This file
 ```
 
@@ -30,6 +35,7 @@ backend/
 - Python 3.8 or higher
 - pip (Python package manager)
 - Tesseract OCR (for image processing)
+- PostgreSQL 12 or higher
 
 ### Installation
 
@@ -53,13 +59,27 @@ backend/
    ```
 
 4. **Install Tesseract OCR:**
+
    - **Windows**: Download from https://github.com/UB-Mannheim/tesseract/wiki
    - **macOS**: `brew install tesseract`
    - **Ubuntu/Debian**: `sudo apt-get install tesseract-ocr`
 
-5. **Run the application:**
+5. **Set up PostgreSQL Database:**
+
    ```bash
-   python app.py
+   # Install PostgreSQL (if not already installed)
+   # Windows: Download from https://www.postgresql.org/download/windows/
+   # macOS: brew install postgresql
+   # Ubuntu/Debian: sudo apt-get install postgresql postgresql-contrib
+
+   # Create database and tables
+   python init_db.py
+   python migrate.py
+   ```
+
+6. **Run the application:**
+   ```bash
+   python start.py
    ```
 
 The server will start on `http://localhost:5000`
