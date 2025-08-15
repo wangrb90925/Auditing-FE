@@ -103,35 +103,7 @@
             </Button>
 
             <!-- User Menu -->
-            <div class="flex items-center space-x-3">
-              <div
-                class="flex items-center space-x-3 bg-card/50 rounded-lg px-3 py-2 border border-border/50"
-              >
-                <div
-                  class="w-8 h-8 bg-gradient-to-br from-primary/20 to-primary/10 rounded-full flex items-center justify-center"
-                >
-                  <UserIcon class="w-4 h-4 text-primary" />
-                </div>
-                <div class="hidden sm:block">
-                  <p class="text-sm font-medium text-foreground">
-                    {{ userStore.user?.name || "User" }}
-                  </p>
-                  <p class="text-xs text-muted-foreground capitalize">
-                    {{ userStore.user?.role || "User" }}
-                  </p>
-                </div>
-              </div>
-
-              <Button
-                variant="outline"
-                size="sm"
-                @click="logout"
-                class="text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-lg transition-all duration-200"
-              >
-                <LogoutIcon class="w-4 h-4 mr-2" />
-                Sign Out
-              </Button>
-            </div>
+            <UserProfile />
           </div>
         </div>
       </div>
@@ -153,13 +125,12 @@ import { useRouter } from "vue-router";
 import { useUserStore } from "./stores/user";
 import { useThemeStore } from "./stores/theme";
 import Button from "@/components/ui/button.vue";
+import UserProfile from "@/components/UserProfile.vue";
 import {
   LogoIcon,
   DashboardIcon,
   UploadIcon,
   AuditHistoryIcon,
-  UserIcon,
-  LogoutIcon,
   SunIcon,
   MoonIcon,
 } from "@/assets/icons";
@@ -170,8 +141,5 @@ const themeStore = useThemeStore();
 
 const isAuthenticated = computed(() => userStore.isAuthenticated);
 
-const logout = () => {
-  userStore.logout();
-  router.push("/login");
-};
+// Logout function is now handled in UserProfile component
 </script>
