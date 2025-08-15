@@ -1,6 +1,6 @@
 <template>
   <div
-    class="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary-50 to-primary-100 py-12 px-4 sm:px-6 lg:px-8"
+    class="min-h-screen flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8"
   >
     <div class="max-w-md w-full space-y-8">
       <div>
@@ -184,6 +184,21 @@ const isLoading = ref(false);
 const error = ref("");
 
 const validateForm = () => {
+  if (!formData.fullName.trim()) {
+    error.value = "Full name is required";
+    return false;
+  }
+
+  if (!formData.email.trim()) {
+    error.value = "Email is required";
+    return false;
+  }
+
+  if (!formData.username.trim()) {
+    error.value = "Username is required";
+    return false;
+  }
+
   if (formData.password !== formData.confirmPassword) {
     error.value = "Passwords do not match";
     return false;
@@ -196,6 +211,13 @@ const validateForm = () => {
 
   if (!formData.role) {
     error.value = "Please select a role";
+    return false;
+  }
+
+  // Email validation
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(formData.email)) {
+    error.value = "Please enter a valid email address";
     return false;
   }
 
