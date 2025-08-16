@@ -5,7 +5,7 @@ import { apiService } from "../lib/api";
 export const useUserStore = defineStore("user", () => {
   const user = ref(null);
   const accessToken = ref(localStorage.getItem("access_token") || null);
-  const refreshToken = ref(localStorage.getItem("refresh_token") || null);
+  const isInitialized = ref(false);
 
   const isAuthenticated = computed(() => !!accessToken.value);
   const isAdmin = computed(() => user.value?.role === "admin");
@@ -16,22 +16,18 @@ export const useUserStore = defineStore("user", () => {
   // Store tokens and user data
   const storeAuthData = (authData) => {
     accessToken.value = authData.access_token;
-    refreshToken.value = authData.refresh_token;
     user.value = authData.user;
 
     localStorage.setItem("access_token", authData.access_token);
-    localStorage.setItem("refresh_token", authData.refresh_token);
     localStorage.setItem("user", JSON.stringify(authData.user));
   };
 
   // Clear auth data
   const clearAuthData = () => {
     accessToken.value = null;
-    refreshToken.value = null;
     user.value = null;
 
     localStorage.removeItem("access_token");
-    localStorage.removeItem("refresh_token");
     localStorage.removeItem("user");
   };
 
@@ -61,18 +57,6 @@ export const useUserStore = defineStore("user", () => {
     clearAuthData();
   };
 
-  const refreshAuth = async () => {
-    try {
-      const response = await apiService.refreshToken();
-      storeAuthData(response);
-      return { success: true };
-    } catch (error) {
-      console.error("Token refresh failed:", error);
-      clearAuthData();
-      return { success: false, error: error.message };
-    }
-  };
-
   const getProfile = async () => {
     try {
       const profile = await apiService.getProfile();
@@ -98,39 +82,55 @@ export const useUserStore = defineStore("user", () => {
   };
 
   const initializeAuth = async () => {
-    const savedAccessToken = localStorage.getItem("access_token");
-    const savedRefreshToken = localStorage.getItem("refresh_token");
-    const savedUser = localStorage.getItem("user");
+    console.log("🔧 Starting auth initialization...");
+    try {
+      const savedAccessToken = localStorage.getItem("access_token");
+      const savedUser = localStorage.getItem("user");
 
-    if (savedAccessToken && savedUser) {
-      accessToken.value = savedAccessToken;
-      refreshToken.value = savedRefreshToken;
-      user.value = JSON.parse(savedUser);
+      console.log("📦 Found saved data:", {
+        hasToken: !!savedAccessToken,
+        hasUser: !!savedUser,
+      });
 
-      // Try to refresh token if it's close to expiring
-      try {
-        await refreshAuth();
-      } catch (error) {
-        console.warn("Token refresh failed during initialization:", error);
-        // Don't clear auth data here, let the user continue with current token
+      if (savedAccessToken && savedUser) {
+        accessToken.value = savedAccessToken;
+        user.value = JSON.parse(savedUser);
+        console.log("✅ Restored auth data from localStorage");
+      } else {
+        console.log("ℹ️ No saved auth data found");
       }
+    } catch (error) {
+      console.error("❌ Error during auth initialization:", error);
+      // Clear invalid data
+      clearAuthData();
+    } finally {
+      // Always set initialized to true to prevent infinite loading
+      console.log("🏁 Setting isInitialized to true");
+      isInitialized.value = true;
     }
   };
 
-  // Initialize auth on store creation
+  // Initialize auth on store creation with a timeout fallback
   initializeAuth();
+
+  // Safety timeout to ensure initialization completes
+  setTimeout(() => {
+    if (!isInitialized.value) {
+      console.warn("Auth initialization timeout, forcing completion");
+      isInitialized.value = true;
+    }
+  }, 2000); // 2 second timeout
 
   return {
     user,
     accessToken,
-    refreshToken,
+    isInitialized,
     isAuthenticated,
     isAdmin,
     isAuditor,
     login,
     signup,
     logout,
-    refreshAuth,
     getProfile,
     updateProfile,
     initializeAuth,
