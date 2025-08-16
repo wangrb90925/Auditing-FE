@@ -37,7 +37,7 @@ const routes = [
     meta: { requiresAuth: true },
   },
   {
-    path: "/audit/:id",
+    path: "/audit",
     name: "AuditDetail",
     component: () => import("../views/AuditDetailView.vue"),
     meta: { requiresAuth: true },
@@ -49,9 +49,24 @@ const router = createRouter({
   routes,
 });
 
-router.beforeEach((to, from, next) => {
+router.beforeEach(async (to, from, next) => {
   const userStore = useUserStore();
 
+  // Wait for the user store to initialize before making authentication decisions
+  if (!userStore.isInitialized) {
+    await new Promise((resolve) => {
+      const unwatch = userStore.$subscribe(() => {
+        if (userStore.isInitialized) {
+          unwatch();
+          resolve();
+        }
+      });
+      // Fallback timeout in case subscription doesn't work
+      setTimeout(resolve, 100);
+    });
+  }
+
+  // Now make authentication decisions
   if (to.meta.requiresAuth && !userStore.isAuthenticated) {
     next("/login");
   } else if (
