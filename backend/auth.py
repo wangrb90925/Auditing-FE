@@ -1,4 +1,4 @@
-from flask_jwt_extended import create_access_token, create_refresh_token, jwt_required, get_jwt_identity
+from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
 from functools import wraps
 from database import User, db
 
