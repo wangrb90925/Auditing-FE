@@ -140,7 +140,6 @@
 
 <script setup>
 import { computed } from "vue";
-import { useRouter } from "vue-router";
 import { useUserStore } from "./stores/user";
 import { useThemeStore } from "./stores/theme";
 import Button from "@/components/ui/button.vue";
@@ -155,11 +154,8 @@ import {
   MoonIcon,
 } from "@/assets/icons";
 
-const router = useRouter();
 const userStore = useUserStore();
 const themeStore = useThemeStore();
 
 const isAuthenticated = computed(() => userStore.isAuthenticated);
-
-// Logout function is now handled in UserProfile component
 </script>
