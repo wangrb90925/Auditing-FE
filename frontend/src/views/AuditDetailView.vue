@@ -231,8 +231,9 @@
 
 <script setup>
 import { ref, computed, onMounted } from "vue";
-import { useRoute, useRouter } from "vue-router";
+import { useRoute } from "vue-router";
 import { useAuditStore } from "../stores/audit";
+import { useAlert } from "../composables/useAlert";
 import Button from "@/components/ui/button.vue";
 import Card from "@/components/ui/card.vue";
 import CardHeader from "@/components/ui/card-header.vue";
@@ -246,8 +247,8 @@ import {
 } from "@/assets/icons";
 
 const route = useRoute();
-const router = useRouter();
 const auditStore = useAuditStore();
+const { showError } = useAlert();
 
 const audit = ref(null);
 const isLoading = ref(true);
@@ -377,7 +378,7 @@ const downloadReport = async () => {
     await auditStore.downloadReport(audit.value.id);
   } catch (error) {
     console.error("Failed to download report:", error);
-    alert("Failed to download report");
+    showError("Download Failed", "Failed to download report");
   }
 };
 
@@ -388,7 +389,7 @@ const downloadFiles = async () => {
     await auditStore.downloadFiles(audit.value.id);
   } catch (error) {
     console.error("Failed to download files:", error);
-    alert("Failed to download files");
+    showError("Download Failed", "Failed to download files");
   }
 };
 </script>

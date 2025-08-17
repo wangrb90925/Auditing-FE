@@ -321,6 +321,7 @@
 import { ref, reactive } from "vue";
 import { useRouter } from "vue-router";
 import { useAuditStore } from "../stores/audit";
+import { useAlert } from "../composables/useAlert";
 import Button from "@/components/ui/button.vue";
 import Input from "@/components/ui/input.vue";
 import Label from "@/components/ui/label.vue";
@@ -338,6 +339,7 @@ import {
 
 const router = useRouter();
 const auditStore = useAuditStore();
+const { showError, showSuccess } = useAlert();
 
 const formData = reactive({
   driverName: "",
@@ -390,17 +392,17 @@ const formatFileSize = (bytes) => {
 
 const handleSubmit = async () => {
   if (selectedFiles.value.length === 0) {
-    alert("Please select at least one file to upload");
+    showError("Validation Error", "Please select at least one file to upload");
     return;
   }
 
   if (!formData.driverName.trim()) {
-    alert("Please enter a driver name");
+    showError("Validation Error", "Please enter a driver name");
     return;
   }
 
   if (!formData.driverType) {
-    alert("Please select a driver type");
+    showError("Validation Error", "Please select a driver type");
     return;
   }
 
@@ -451,8 +453,10 @@ const handleSubmit = async () => {
     console.log("Audit processed successfully:", processResult.audit);
 
     // Step 4: Show success message and redirect
-    alert(
-      `Audit completed successfully!\n\nDriver: ${formData.driverName}\nType: ${formData.driverType}\nCompliance Score: ${processResult.audit.summary?.complianceScore || "N/A"}%\nViolations Found: ${processResult.audit.violations || 0}`
+    showSuccess(
+      "Audit Completed Successfully",
+      `Driver: ${formData.driverName}\nType: ${formData.driverType}\nCompliance Score: ${processResult.audit.summary?.complianceScore || "N/A"}%\nViolations Found: ${processResult.audit.violations || 0}`,
+      8000
     );
 
     // Redirect to audit detail view
@@ -473,7 +477,7 @@ const handleSubmit = async () => {
       errorMessage = `Error: ${error.message}`;
     }
 
-    alert(errorMessage);
+    showError("Error", errorMessage);
   } finally {
     isSubmitting.value = false;
   }
