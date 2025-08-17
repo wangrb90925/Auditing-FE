@@ -78,7 +78,7 @@ def register():
             return jsonify({'error': error}), 400
         
         # Create tokens
-        access_token = create_access_token(identity=user.id)
+        access_token = create_access_token(identity=str(user.id))
         
         return jsonify({
             'message': 'User registered successfully',
@@ -105,7 +105,7 @@ def login():
             return jsonify({'error': error}), 401
         
         # Create tokens
-        access_token = create_access_token(identity=user.id)
+        access_token = create_access_token(identity=str(user.id))
         
         return jsonify({
             'message': 'Login successful',
@@ -122,7 +122,7 @@ def get_profile():
     """Get current user profile"""
     try:
         current_user_id = get_jwt_identity()
-        user = get_user_by_id(current_user_id)
+        user = get_user_by_id(int(current_user_id))
         
         if not user:
             return jsonify({'error': 'User not found'}), 404
@@ -220,6 +220,11 @@ def create_audit():
         print(f"Generated audit ID: {audit_id}")  # Debug logging
         
         # Create new audit in database
+        try:
+            user_id = int(current_user_id)
+        except (ValueError, TypeError):
+            return jsonify({'error': 'Invalid user ID format'}), 400
+            
         audit = Audit(
             id=audit_id,
             driver_name=data.get('driverName', ''),
@@ -227,7 +232,7 @@ def create_audit():
             status='pending',
             violations_list=json.dumps([]),
             processing_log=json.dumps([]),
-            created_by=current_user_id
+            created_by=user_id
         )
         
         db.session.add(audit)

@@ -132,6 +132,9 @@
         <router-view />
       </main>
     </div>
+
+    <!-- Alert Container -->
+    <AlertContainer />
   </div>
 </template>
 
@@ -142,6 +145,7 @@ import { useUserStore } from "./stores/user";
 import { useThemeStore } from "./stores/theme";
 import Button from "@/components/ui/button.vue";
 import UserProfile from "@/components/UserProfile.vue";
+import AlertContainer from "@/components/AlertContainer.vue";
 import {
   LogoIcon,
   DashboardIcon,

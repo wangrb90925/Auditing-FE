@@ -7,7 +7,7 @@ def admin_required(fn):
     @wraps(fn)
     def wrapper(*args, **kwargs):
         current_user_id = get_jwt_identity()
-        user = User.query.get(current_user_id)
+        user = User.query.get(int(current_user_id))
         if not user or not user.is_admin():
             return {'error': 'Admin access required'}, 403
         return fn(*args, **kwargs)
@@ -18,7 +18,7 @@ def auditor_required(fn):
     @wraps(fn)
     def wrapper(*args, **kwargs):
         current_user_id = get_jwt_identity()
-        user = User.query.get(current_user_id)
+        user = User.query.get(int(current_user_id))
         if not user or not (user.is_auditor() or user.is_admin()):
             return {'error': 'Auditor access required'}, 403
         return fn(*args, **kwargs)
