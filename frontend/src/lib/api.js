@@ -54,44 +54,6 @@ class ApiService {
 
     try {
       const response = await fetch(url, config);
-
-      // If we get a 401, try to refresh the token and retry once
-      if (response.status === 401 && endpoint !== "/auth/refresh") {
-        try {
-          const refreshToken = localStorage.getItem("refresh_token");
-          if (refreshToken) {
-            const refreshResponse = await fetch(
-              `${this.baseURL}/auth/refresh`,
-              {
-                method: "POST",
-                headers: {
-                  Authorization: `Bearer ${refreshToken}`,
-                },
-              }
-            );
-
-            if (refreshResponse.ok) {
-              const refreshData = await refreshResponse.json();
-              localStorage.setItem("access_token", refreshData.access_token);
-
-              // Retry the original request with new token
-              const retryConfig = {
-                ...config,
-                headers: {
-                  ...config.headers,
-                  Authorization: `Bearer ${refreshData.access_token}`,
-                },
-              };
-
-              const retryResponse = await fetch(url, retryConfig);
-              return await this.handleResponse(retryResponse);
-            }
-          }
-        } catch (refreshError) {
-          console.warn("Token refresh failed:", refreshError);
-        }
-      }
-
       return await this.handleResponse(response);
     } catch (error) {
       console.error("API request failed:", error);
@@ -125,20 +87,6 @@ class ApiService {
     return this.request("/auth/register", {
       method: "POST",
       body: JSON.stringify(payload),
-    });
-  }
-
-  async refreshToken() {
-    const refreshToken = localStorage.getItem("refresh_token");
-    if (!refreshToken) {
-      throw new Error("No refresh token available");
-    }
-
-    return this.request("/auth/refresh", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${refreshToken}`,
-      },
     });
   }
 
