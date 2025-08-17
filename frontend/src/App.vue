@@ -96,6 +96,26 @@
                     <span class="font-medium">Audit History</span>
                   </router-link>
                 </Button>
+
+                <Button
+                  variant="ghost"
+                  as-child
+                  class="px-4 py-2 h-10 rounded-lg transition-all duration-200"
+                  :class="{
+                    'bg-primary/10 text-primary border border-primary/20':
+                      $route.path === '/reports',
+                    'text-muted-foreground hover:text-foreground hover:bg-muted/50':
+                      $route.path !== '/reports',
+                  }"
+                >
+                  <router-link
+                    to="/reports"
+                    class="flex items-center space-x-2"
+                  >
+                    <DocumentIcon class="w-4 h-4" />
+                    <span class="font-medium">Audit Reports</span>
+                  </router-link>
+                </Button>
               </div>
             </div>
 
@@ -150,6 +170,7 @@ import {
   DashboardIcon,
   UploadIcon,
   AuditHistoryIcon,
+  DocumentIcon,
   SunIcon,
   MoonIcon,
 } from "@/assets/icons";
