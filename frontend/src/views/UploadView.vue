@@ -427,15 +427,6 @@ const handleSubmit = async () => {
       throw new Error("Invalid audit response: missing audit ID");
     }
 
-    // Validate that the audit ID is a valid UUID
-    const uuidRegex =
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-    if (!uuidRegex.test(newAudit.id)) {
-      throw new Error(`Invalid audit ID format: ${newAudit.id}`);
-    }
-
-    console.log("Audit ID validation passed:", newAudit.id);
-
     // Step 2: Upload files
     console.log("Uploading files for audit:", newAudit.id);
     const uploadResult = await auditStore.uploadFiles(
@@ -447,23 +438,42 @@ const handleSubmit = async () => {
       throw new Error(uploadResult.error || "Failed to upload files");
     }
 
-    // Step 3: Process audit
-    console.log("Processing audit:", newAudit.id);
+    console.log("Files uploaded successfully:", uploadResult.files);
+
+    // Step 3: Process audit with AI engine
+    console.log("Processing audit with AI engine:", newAudit.id);
     const processResult = await auditStore.processAudit(newAudit.id);
 
     if (!processResult.success) {
       throw new Error(processResult.error || "Failed to process audit");
     }
 
-    console.log(
-      "Audit completed successfully, redirecting to:",
-      `/audit/${newAudit.id}`
+    console.log("Audit processed successfully:", processResult.audit);
+
+    // Step 4: Show success message and redirect
+    alert(
+      `Audit completed successfully!\n\nDriver: ${formData.driverName}\nType: ${formData.driverType}\nCompliance Score: ${processResult.audit.summary?.complianceScore || "N/A"}%\nViolations Found: ${processResult.audit.violations || 0}`
     );
+
+    // Redirect to audit detail view
     router.push(`/audit/${newAudit.id}`);
   } catch (error) {
-    console.error("Error creating audit:", error);
-    alert(`Error creating audit: ${error.message}`);
-    // You might want to show an error message to the user here
+    console.error("Error in audit workflow:", error);
+
+    // Show user-friendly error message
+    let errorMessage = "An error occurred during the audit process.";
+
+    if (error.message.includes("Validation error")) {
+      errorMessage = "Please check your input data and try again.";
+    } else if (error.message.includes("Unauthorized")) {
+      errorMessage = "Please log in again to continue.";
+    } else if (error.message.includes("No files uploaded")) {
+      errorMessage = "Please upload at least one file for processing.";
+    } else {
+      errorMessage = `Error: ${error.message}`;
+    }
+
+    alert(errorMessage);
   } finally {
     isSubmitting.value = false;
   }
