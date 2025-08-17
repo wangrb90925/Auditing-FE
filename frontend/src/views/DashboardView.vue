@@ -362,7 +362,7 @@
               as-child
               class="w-full rounded-lg border-green-200 text-green-700 hover:bg-green-50"
             >
-              <router-link to="/audits">View Reports</router-link>
+              <router-link to="/reports">Generate Reports</router-link>
             </Button>
           </div>
         </CardContent>

@@ -4,7 +4,9 @@
     <div class="flex justify-between items-center mb-8">
       <div>
         <h1 class="text-3xl font-bold text-gray-900 mb-2">Audit History</h1>
-        <p class="text-gray-600 text-lg">View and manage all audit reports</p>
+        <p class="text-gray-600 text-lg">
+          View and manage all completed audit records
+        </p>
       </div>
       <div v-if="userStore.isAuthenticated" class="flex space-x-3">
         <Button
