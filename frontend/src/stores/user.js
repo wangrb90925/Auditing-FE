@@ -13,6 +13,27 @@ export const useUserStore = defineStore("user", () => {
     () => user.value?.role === "auditor" || user.value?.role === "admin"
   );
 
+  // Role-based permissions
+  const canUpload = computed(() => {
+    return isAuditor.value || isAdmin.value;
+  });
+
+  const canReview = computed(() => {
+    return isAuditor.value || isAdmin.value;
+  });
+
+  const canDownload = computed(() => {
+    return isAuditor.value || isAdmin.value;
+  });
+
+  const canManageUsers = computed(() => {
+    return isAdmin.value;
+  });
+
+  const canViewLogs = computed(() => {
+    return isAdmin.value;
+  });
+
   // Store tokens and user data
   const storeAuthData = (authData) => {
     accessToken.value = authData.access_token;
@@ -128,6 +149,11 @@ export const useUserStore = defineStore("user", () => {
     isAuthenticated,
     isAdmin,
     isAuditor,
+    canUpload,
+    canReview,
+    canDownload,
+    canManageUsers,
+    canViewLogs,
     login,
     signup,
     logout,

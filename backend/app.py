@@ -586,5 +586,112 @@ def get_stats():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+# Admin-only endpoints
+@app.route('/api/admin/users', methods=['GET'])
+@jwt_required()
+@admin_required
+def get_all_users():
+    """Get all users (admin only)"""
+    try:
+        users = get_all_users()
+        return jsonify([user.to_dict() for user in users])
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/admin/users/<int:user_id>', methods=['PUT'])
+@jwt_required()
+@admin_required
+def update_user_role(user_id):
+    """Update user role (admin only)"""
+    try:
+        data = request.get_json()
+        new_role = data.get('role')
+        
+        if new_role not in ['admin', 'auditor']:
+            return jsonify({'error': 'Invalid role. Must be admin or auditor'}), 400
+        
+        user, error = change_user_role(user_id, new_role)
+        if error:
+            return jsonify({'error': error}), 400
+        
+        return jsonify({
+            'message': f'User role updated to {new_role}',
+            'user': user.to_dict()
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/admin/users/<int:user_id>/toggle-status', methods=['PUT'])
+@jwt_required()
+@admin_required
+def toggle_user_status(user_id):
+    """Toggle user active status (admin only)"""
+    try:
+        user = User.query.get(user_id)
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+        
+        user.is_active = not user.is_active
+        db.session.commit()
+        
+        action = 'activated' if user.is_active else 'deactivated'
+        return jsonify({
+            'message': f'User {action} successfully',
+            'user': user.to_dict()
+        })
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/admin/system-stats', methods=['GET'])
+@jwt_required()
+@admin_required
+def get_system_stats():
+    """Get system statistics (admin only)"""
+    try:
+        total_users = User.query.count()
+        active_users = User.query.filter_by(is_active=True).count()
+        total_audits = Audit.query.count()
+        
+        # Mock system health (in real app, this would check actual system metrics)
+        system_health = 95
+        
+        return jsonify({
+            'totalUsers': total_users,
+            'activeUsers': active_users,
+            'totalAudits': total_audits,
+            'systemHealth': system_health
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/admin/system-logs', methods=['GET'])
+@jwt_required()
+@admin_required
+def get_system_logs():
+    """Get system logs (admin only)"""
+    try:
+        # Mock system logs (in real app, this would fetch from actual log files)
+        logs = [
+            {
+                'timestamp': datetime.now().isoformat(),
+                'level': 'INFO',
+                'message': 'System running normally'
+            },
+            {
+                'timestamp': (datetime.now() - timedelta(hours=1)).isoformat(),
+                'level': 'INFO',
+                'message': 'Database backup completed'
+            }
+        ]
+        
+        return jsonify(logs)
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 if __name__ == '__main__':
     app.run(debug=False, host='127.0.0.1', port=5000, use_reloader=False) 

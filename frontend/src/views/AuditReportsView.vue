@@ -35,7 +35,27 @@
               d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
             ></path>
           </svg>
-          <span>Export PDF</span>
+          <span>Export Summary</span>
+        </Button>
+        <Button
+          variant="outline"
+          @click="exportAllToCSV"
+          class="flex items-center space-x-2"
+        >
+          <svg
+            class="w-4 h-4"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+            ></path>
+          </svg>
+          <span>Export CSV</span>
         </Button>
       </div>
     </div>
@@ -437,12 +457,151 @@ const viewReport = (reportId) => {
 };
 
 const downloadReport = (reportId) => {
-  // Download report logic
-  showSuccess("Download Started", "Report download has begun.");
+  // Find the report to download
+  const report = recentReports.value.find((r) => r.id === reportId);
+  if (!report) {
+    showError("Error", "Report not found.");
+    return;
+  }
+
+  try {
+    // Create report content
+    const reportContent = generateReportContent(report);
+
+    // Create and download file
+    const blob = new Blob([reportContent], { type: "text/csv" });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${report.title.replace(/\s+/g, "_")}_${new Date().toISOString().split("T")[0]}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+
+    showSuccess(
+      "Download Complete",
+      "Report has been downloaded successfully."
+    );
+  } catch (error) {
+    showError(
+      "Download Failed",
+      "Failed to download report. Please try again."
+    );
+  }
+};
+
+const generateReportContent = (report) => {
+  // Generate CSV content for the report
+  const headers = ["Report Title", "Description", "Type", "Generated At"];
+  const data = [
+    report.title,
+    report.description,
+    report.type,
+    report.generatedAt,
+  ];
+
+  return [headers.join(","), data.join(",")].join("\n");
 };
 
 const exportToPDF = () => {
-  showSuccess("Export Started", "PDF export has begun.");
+  try {
+    // Generate comprehensive report content for PDF export
+    const reportContent = generateComprehensiveReportContent();
+
+    // Create and download file (simulating PDF export)
+    const blob = new Blob([reportContent], { type: "text/plain" });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `Audit_Reports_Summary_${new Date().toISOString().split("T")[0]}.txt`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+
+    showSuccess(
+      "Export Complete",
+      "Reports summary has been exported successfully."
+    );
+  } catch (error) {
+    showError("Export Failed", "Failed to export reports. Please try again.");
+  }
+};
+
+const generateComprehensiveReportContent = () => {
+  const lines = [];
+
+  // Header
+  lines.push("AUDIT REPORTS SUMMARY");
+  lines.push("Generated: " + new Date().toLocaleString());
+  lines.push("=".repeat(50));
+  lines.push("");
+
+  // Analytics Summary
+  lines.push("ANALYTICS SUMMARY");
+  lines.push("Compliance Rate: 87.5%");
+  lines.push("Total Violations: 24");
+  lines.push("Audits This Month: 156");
+  lines.push("Risk Score: Medium");
+  lines.push("");
+
+  // Recent Reports
+  lines.push("RECENT REPORTS");
+  lines.push("-".repeat(30));
+  recentReports.value.forEach((report, index) => {
+    lines.push(`${index + 1}. ${report.title}`);
+    lines.push(`   Description: ${report.description}`);
+    lines.push(`   Type: ${report.type}`);
+    lines.push(`   Generated: ${report.generatedAt}`);
+    lines.push("");
+  });
+
+  // Report Configuration
+  lines.push("CURRENT REPORT CONFIGURATION");
+  lines.push("-".repeat(30));
+  lines.push(`Report Type: ${reportConfig.value.type}`);
+  lines.push(`Date Range: ${reportConfig.value.dateRange}`);
+  lines.push(`Driver Filter: ${reportConfig.value.driverFilter}`);
+
+  return lines.join("\n");
+};
+
+const exportAllToCSV = () => {
+  try {
+    const headers = ["ID", "Title", "Description", "Type", "Generated At"];
+    const data = recentReports.value.map((report, index) => [
+      index + 1,
+      report.title,
+      report.description,
+      report.type,
+      report.generatedAt,
+    ]);
+
+    const csvContent = [
+      headers.join(","),
+      ...data.map((row) => row.join(",")),
+    ].join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv" });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `All_Recent_Reports_${new Date().toISOString().split("T")[0]}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+
+    showSuccess(
+      "Export Complete",
+      "All recent reports have been exported successfully."
+    );
+  } catch (error) {
+    showError(
+      "Export Failed",
+      "Failed to export all reports. Please try again."
+    );
+  }
 };
 
 onMounted(() => {
