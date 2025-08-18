@@ -82,11 +82,45 @@ def update_user(user_id, **kwargs):
             return None, "User not found"
         
         # Update allowed fields
-        allowed_fields = ['first_name', 'last_name', 'email', 'is_active']
+        allowed_fields = ['first_name', 'last_name', 'email', 'username', 'is_active', 'role']
         for field, value in kwargs.items():
             if field in allowed_fields:
+                # Check for unique constraints
+                if field == 'username' and value != user.username:
+                    existing_user = User.query.filter_by(username=value).first()
+                    if existing_user and existing_user.id != user_id:
+                        return None, "Username already exists"
+                elif field == 'email' and value != user.email:
+                    existing_user = User.query.filter_by(email=value).first()
+                    if existing_user and existing_user.id != user_id:
+                        return None, "Email already exists"
+                elif field == 'role':
+                    # Validate role value
+                    if value not in ['admin', 'auditor']:
+                        return None, "Invalid role. Must be 'admin' or 'auditor'"
+                
                 setattr(user, field, value)
         
+        db.session.commit()
+        return user, None
+        
+    except Exception as e:
+        db.session.rollback()
+        return None, str(e)
+
+def change_user_password(user_id, current_password, new_password):
+    """Change user password"""
+    try:
+        user = User.query.get(user_id)
+        if not user:
+            return None, "User not found"
+        
+        # Verify current password
+        if not user.check_password(current_password):
+            return None, "Current password is incorrect"
+        
+        # Update password
+        user.set_password(new_password)
         db.session.commit()
         return user, None
         

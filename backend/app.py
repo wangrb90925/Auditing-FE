@@ -13,7 +13,7 @@ from fmcsa_rules import FMCSARules
 from database import db, Audit, AuditFile, User, init_db
 from auth import (
     create_user, authenticate_user, get_user_by_id, get_all_users, 
-    update_user, change_user_role, create_default_admin,
+    update_user, change_user_role, create_default_admin, change_user_password,
     admin_required, auditor_required
 )
 import tempfile
@@ -149,6 +149,39 @@ def update_profile():
         return jsonify({
             'message': 'Profile updated successfully',
             'user': user.to_dict()
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/auth/change-password', methods=['POST'])
+@jwt_required()
+def change_password():
+    """Change user password"""
+    try:
+        current_user_id = get_jwt_identity()
+        data = request.get_json()
+        
+        current_password = data.get('currentPassword')
+        new_password = data.get('newPassword')
+        
+        if not current_password or not new_password:
+            return jsonify({'error': 'Current password and new password are required'}), 400
+        
+        # Get user and verify current password
+        user = get_user_by_id(int(current_user_id))
+        if not user:
+            return jsonify({'error': 'User not found'}), 404
+        
+        if not user.check_password(current_password):
+            return jsonify({'error': 'Current password is incorrect'}), 400
+        
+        # Update password
+        user.set_password(new_password)
+        db.session.commit()
+        
+        return jsonify({
+            'message': 'Password changed successfully'
         })
         
     except Exception as e:

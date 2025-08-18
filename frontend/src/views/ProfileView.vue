@@ -41,15 +41,27 @@
         </CardHeader>
         <CardContent>
           <form @submit.prevent="updateProfile" class="space-y-4">
-            <div>
-              <Label for="fullName">Full Name</Label>
-              <Input
-                id="fullName"
-                v-model="profileForm.fullName"
-                type="text"
-                placeholder="Enter your full name"
-                required
-              />
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <Label for="firstName">First Name</Label>
+                <Input
+                  id="firstName"
+                  v-model="profileForm.firstName"
+                  type="text"
+                  placeholder="Enter your first name"
+                  required
+                />
+              </div>
+              <div>
+                <Label for="lastName">Last Name</Label>
+                <Input
+                  id="lastName"
+                  v-model="profileForm.lastName"
+                  type="text"
+                  placeholder="Enter your last name"
+                  required
+                />
+              </div>
             </div>
             <div>
               <Label for="email">Email Address</Label>
@@ -59,9 +71,8 @@
                 type="email"
                 placeholder="Enter your email address"
                 required
-                disabled
               />
-              <p class="text-xs text-gray-500 mt-1">Email cannot be changed</p>
+              <p class="text-xs text-gray-500 mt-1">Email can be updated</p>
             </div>
             <div>
               <Label for="username">Username</Label>
@@ -142,22 +153,32 @@
         <CardContent>
           <form @submit.prevent="changePassword" class="space-y-4">
             <div>
-              <Label for="password">Password</Label>
+              <Label for="currentPassword">Current Password</Label>
               <Input
-                id="password"
-                v-model="passwordForm.password"
+                id="currentPassword"
+                v-model="passwordForm.currentPassword"
                 type="password"
-                placeholder="Create a password"
+                placeholder="Enter your current password"
                 required
               />
             </div>
             <div>
-              <Label for="confirmPassword">Confirm Password</Label>
+              <Label for="newPassword">New Password</Label>
+              <Input
+                id="newPassword"
+                v-model="passwordForm.newPassword"
+                type="password"
+                placeholder="Create a new password"
+                required
+              />
+            </div>
+            <div>
+              <Label for="confirmPassword">Confirm New Password</Label>
               <Input
                 id="confirmPassword"
                 v-model="passwordForm.confirmPassword"
                 type="password"
-                placeholder="Confirm your password"
+                placeholder="Confirm your new password"
                 required
               />
             </div>
@@ -240,6 +261,39 @@
               <div class="text-sm text-gray-500">Pending</div>
             </div>
           </div>
+
+          <!-- Debug Section -->
+          <div class="mt-6 p-4 bg-gray-50 rounded-lg">
+            <h4 class="text-sm font-semibold text-gray-700 mb-2">
+              Debug Information
+            </h4>
+            <div class="text-xs text-gray-600 space-y-1">
+              <div>
+                User Store:
+                {{
+                  userStore.isAuthenticated
+                    ? "Authenticated"
+                    : "Not Authenticated"
+                }}
+              </div>
+              <div>
+                User Data: {{ userStore.user ? "Available" : "Not Available" }}
+              </div>
+              <div>Audit Count: {{ auditStore.audits?.length || 0 }}</div>
+              <div>Profile Form: {{ JSON.stringify(profileForm) }}</div>
+            </div>
+            <div class="mt-3 space-x-2">
+              <Button @click="testProfileUpdate" size="sm" variant="outline">
+                Test Profile Update
+              </Button>
+              <Button @click="testPasswordChange" size="sm" variant="outline">
+                Test Password Change
+              </Button>
+              <Button @click="refreshUserData" size="sm" variant="outline">
+                Refresh User Data
+              </Button>
+            </div>
+          </div>
         </CardContent>
       </Card>
     </div>
@@ -297,7 +351,8 @@ const { showAlert } = useAlert();
 
 // Profile form state
 const profileForm = reactive({
-  fullName: "",
+  firstName: "",
+  lastName: "",
   email: "",
   username: "",
   role: "",
@@ -306,7 +361,8 @@ const profileForm = reactive({
 
 // Password form state
 const passwordForm = reactive({
-  password: "",
+  currentPassword: "",
+  newPassword: "",
   confirmPassword: "",
   isLoading: false,
 });
@@ -320,16 +376,23 @@ const userStats = reactive({
 
 // Initialize profile data
 const initializeProfile = () => {
+  console.log("🔧 Starting profile initialization...");
+  console.log("👤 User store state:", {
+    user: userStore.user,
+    isAuthenticated: userStore.isAuthenticated,
+    isInitialized: userStore.isInitialized,
+  });
+
   if (userStore.user) {
-    // Handle the actual user data structure from backend
-    const firstName = userStore.user.first_name || "";
-    const lastName = userStore.user.last_name || "";
-    profileForm.fullName = `${firstName} ${lastName}`.trim() || "";
+    console.log("🔧 Initializing profile with user data:", userStore.user);
+
+    // Map backend fields to frontend form
+    profileForm.firstName = userStore.user.first_name || "";
+    profileForm.lastName = userStore.user.last_name || "";
     profileForm.email = userStore.user.email || "";
     profileForm.username = userStore.user.username || "";
     profileForm.role = userStore.user.role || "";
 
-    console.log("🔧 Initializing profile with user data:", userStore.user);
     console.log("📝 Profile form initialized:", profileForm);
   } else {
     console.log("⚠️ No user data available in userStore");
@@ -340,9 +403,8 @@ const initializeProfile = () => {
         const userData = JSON.parse(savedUser);
         console.log("📦 Found user data in localStorage:", userData);
 
-        const firstName = userData.first_name || "";
-        const lastName = userData.last_name || "";
-        profileForm.fullName = `${firstName} ${lastName}`.trim() || "";
+        profileForm.firstName = userData.first_name || "";
+        profileForm.lastName = userData.last_name || "";
         profileForm.email = userData.email || "";
         profileForm.username = userData.username || "";
         profileForm.role = userData.role || "";
@@ -351,6 +413,8 @@ const initializeProfile = () => {
           "📝 Profile form initialized from localStorage:",
           profileForm
         );
+      } else {
+        console.log("❌ No user data found in localStorage");
       }
     } catch (error) {
       console.error("❌ Error parsing localStorage user data:", error);
@@ -360,9 +424,17 @@ const initializeProfile = () => {
 
 // Update profile
 const updateProfile = async () => {
+  console.log("🚀 Starting profile update...");
+  console.log("📝 Current form data:", profileForm);
+
   // Validation
-  if (!profileForm.fullName.trim()) {
-    showAlert("Full name is required", "error");
+  if (!profileForm.firstName.trim()) {
+    showAlert("First name is required", "error");
+    return;
+  }
+
+  if (!profileForm.lastName.trim()) {
+    showAlert("Last name is required", "error");
     return;
   }
 
@@ -378,27 +450,52 @@ const updateProfile = async () => {
 
   profileForm.isLoading = true;
   try {
-    // Here you would typically call an API to update the profile
-    // For now, we'll just simulate the update
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    // Prepare data for backend API
+    const profileData = {
+      first_name: profileForm.firstName.trim(),
+      last_name: profileForm.lastName.trim(),
+      email: profileForm.email.trim(),
+      username: profileForm.username.trim(),
+    };
 
-    showAlert({
-      type: "success",
-      title: "Profile Updated",
-      message: "Your profile has been updated successfully!",
+    console.log("📤 Sending profile update:", profileData);
+    console.log("🔐 User store methods available:", {
+      hasUpdateProfile: typeof userStore.updateProfile === "function",
+      hasGetProfile: typeof userStore.getProfile === "function",
     });
 
-    // Update the user store if needed
-    if (userStore.user) {
-      userStore.user.fullName = profileForm.fullName;
-      userStore.user.username = profileForm.username;
-      userStore.user.role = profileForm.role;
+    // Call real API to update profile
+    const result = await userStore.updateProfile(profileData);
+    console.log("📥 Profile update result:", result);
+
+    if (result.success) {
+      showAlert({
+        type: "success",
+        title: "Profile Updated",
+        message: "Your profile has been updated successfully!",
+      });
+
+      // Refresh user data
+      console.log("🔄 Refreshing user data...");
+      const refreshResult = await userStore.getProfile();
+      console.log("🔄 User data refresh result:", refreshResult);
+
+      console.log("✅ Profile updated successfully");
+    } else {
+      throw new Error(result.error || "Unknown error occurred");
     }
   } catch (error) {
+    console.error("❌ Profile update failed:", error);
+    console.error("❌ Error details:", {
+      message: error.message,
+      stack: error.stack,
+      name: error.name,
+    });
+
     showAlert({
       type: "error",
       title: "Update Failed",
-      message: "Failed to update profile. Please try again.",
+      message: error.message || "Failed to update profile. Please try again.",
     });
   } finally {
     profileForm.isLoading = false;
@@ -407,42 +504,78 @@ const updateProfile = async () => {
 
 // Change password
 const changePassword = async () => {
+  console.log("🔐 Starting password change...");
+  console.log("🔑 Current password form state:", {
+    hasCurrentPassword: !!passwordForm.currentPassword,
+    hasNewPassword: !!passwordForm.newPassword,
+    hasConfirmPassword: !!passwordForm.confirmPassword,
+    passwordsMatch: passwordForm.newPassword === passwordForm.confirmPassword,
+  });
+
   // Validation
-  if (!passwordForm.password.trim()) {
-    showAlert("Password is required", "error");
+  if (!passwordForm.currentPassword.trim()) {
+    showAlert("Current password is required", "error");
     return;
   }
 
-  if (passwordForm.password.length < 8) {
-    showAlert("Password must be at least 8 characters long", "error");
+  if (!passwordForm.newPassword.trim()) {
+    showAlert("New password is required", "error");
     return;
   }
 
-  if (passwordForm.password !== passwordForm.confirmPassword) {
-    showAlert("Passwords do not match", "error");
+  if (passwordForm.newPassword.length < 8) {
+    showAlert("New password must be at least 8 characters long", "error");
+    return;
+  }
+
+  if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+    showAlert("New passwords do not match", "error");
     return;
   }
 
   passwordForm.isLoading = true;
   try {
-    // Here you would typically call an API to change the password
-    // For now, we'll just simulate the change
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-
-    showAlert({
-      type: "success",
-      title: "Password Changed",
-      message: "Your password has been changed successfully!",
+    console.log("🔐 Changing password...");
+    console.log("🔐 User store methods available:", {
+      hasChangePassword: typeof userStore.changePassword === "function",
     });
 
-    // Reset password form
-    passwordForm.password = "";
-    passwordForm.confirmPassword = "";
+    // Call real API to change password
+    const result = await userStore.changePassword({
+      currentPassword: passwordForm.currentPassword,
+      newPassword: passwordForm.newPassword,
+    });
+
+    console.log("📥 Password change result:", result);
+
+    if (result.success) {
+      showAlert({
+        type: "success",
+        title: "Password Changed",
+        message: "Your password has been changed successfully!",
+      });
+
+      // Reset password form
+      passwordForm.currentPassword = "";
+      passwordForm.newPassword = "";
+      passwordForm.confirmPassword = "";
+
+      console.log("✅ Password changed successfully");
+    } else {
+      throw new Error(result.error || "Unknown error occurred");
+    }
   } catch (error) {
+    console.error("❌ Password change failed:", error);
+    console.error("❌ Error details:", {
+      message: error.message,
+      stack: error.stack,
+      name: error.name,
+    });
+
     showAlert({
       type: "error",
       title: "Change Failed",
-      message: "Failed to change password. Please try again.",
+      message: error.message || "Failed to change password. Please try again.",
     });
   } finally {
     passwordForm.isLoading = false;
@@ -451,6 +584,13 @@ const changePassword = async () => {
 
 // Calculate user stats
 const calculateUserStats = () => {
+  console.log("📊 Starting user stats calculation...");
+  console.log("📋 Audit store state:", {
+    audits: auditStore.audits,
+    auditsLength: auditStore.audits?.length || 0,
+    hasAudits: !!auditStore.audits,
+  });
+
   const audits = auditStore.audits || [];
   userStats.totalAudits = audits.length;
   userStats.completedAudits = audits.filter(
@@ -459,6 +599,14 @@ const calculateUserStats = () => {
   userStats.pendingAudits = audits.filter(
     (audit) => audit.status === "pending"
   ).length;
+
+  console.log("📊 User stats calculated:", userStats);
+  console.log("📊 Audit status breakdown:", {
+    total: audits.length,
+    completed: userStats.completedAudits,
+    pending: userStats.pendingAudits,
+    other: audits.length - userStats.completedAudits - userStats.pendingAudits,
+  });
 };
 
 // Watch for user data changes
@@ -488,16 +636,68 @@ onMounted(async () => {
     if (!userStore.user) {
       console.log("⏳ Waiting for user data...");
       await new Promise((resolve) => setTimeout(resolve, 500));
+
+      console.log("⏳ After waiting, user state:", {
+        hasUser: !!userStore.user,
+        userData: userStore.user,
+      });
     }
 
+    console.log("🔧 Initializing profile...");
     initializeProfile();
 
+    // Fetch audits if not already loaded
     if (auditStore.audits.length === 0) {
-      await auditStore.fetchAudits();
+      console.log("📋 Fetching audits for user stats...");
+      try {
+        const auditResult = await auditStore.fetchAudits();
+        console.log("📋 Audit fetch result:", auditResult);
+
+        if (!auditResult.success) {
+          console.warn("⚠️ Audit fetch failed:", auditResult.error);
+        }
+      } catch (error) {
+        console.error("❌ Failed to fetch audits:", error);
+        console.error("❌ Error details:", {
+          message: error.message,
+          stack: error.stack,
+          name: error.name,
+        });
+      }
+    } else {
+      console.log("📋 Audits already loaded, count:", auditStore.audits.length);
     }
+
+    console.log("📊 Calculating user stats...");
     calculateUserStats();
+  } else {
+    console.log("❌ User not authenticated, skipping initialization");
   }
 });
+
+// Test functions for debugging
+const testProfileUpdate = () => {
+  console.log("🔄 Testing Profile Update...");
+  profileForm.firstName = "TestFirstName";
+  profileForm.lastName = "TestLastName";
+  profileForm.email = "test@example.com";
+  profileForm.username = "testuser";
+  profileForm.role = "admin";
+  updateProfile();
+};
+
+const testPasswordChange = () => {
+  console.log("🔐 Testing Password Change...");
+  passwordForm.currentPassword = "testPassword";
+  passwordForm.newPassword = "newTestPassword123";
+  passwordForm.confirmPassword = "newTestPassword123";
+  changePassword();
+};
+
+const refreshUserData = () => {
+  console.log("🔄 Refreshing User Data...");
+  userStore.getProfile();
+};
 </script>
 
 <style scoped>
