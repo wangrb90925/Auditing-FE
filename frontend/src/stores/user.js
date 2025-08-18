@@ -13,6 +13,27 @@ export const useUserStore = defineStore("user", () => {
     () => user.value?.role === "auditor" || user.value?.role === "admin"
   );
 
+  // Role-based permissions
+  const canUpload = computed(() => {
+    return isAuditor.value || isAdmin.value;
+  });
+
+  const canReview = computed(() => {
+    return isAuditor.value || isAdmin.value;
+  });
+
+  const canDownload = computed(() => {
+    return isAuditor.value || isAdmin.value;
+  });
+
+  const canManageUsers = computed(() => {
+    return isAdmin.value;
+  });
+
+  const canViewLogs = computed(() => {
+    return isAdmin.value;
+  });
+
   // Store tokens and user data
   const storeAuthData = (authData) => {
     accessToken.value = authData.access_token;
@@ -81,6 +102,16 @@ export const useUserStore = defineStore("user", () => {
     }
   };
 
+  const changePassword = async (passwordData) => {
+    try {
+      const response = await apiService.changePassword(passwordData);
+      return { success: true, message: response.message };
+    } catch (error) {
+      console.error("Change password failed:", error);
+      return { success: false, error: error.message };
+    }
+  };
+
   const initializeAuth = async () => {
     console.log("🔧 Starting auth initialization...");
     try {
@@ -128,11 +159,17 @@ export const useUserStore = defineStore("user", () => {
     isAuthenticated,
     isAdmin,
     isAuditor,
+    canUpload,
+    canReview,
+    canDownload,
+    canManageUsers,
+    canViewLogs,
     login,
     signup,
     logout,
     getProfile,
     updateProfile,
+    changePassword,
     initializeAuth,
   };
 });
