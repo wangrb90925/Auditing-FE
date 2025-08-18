@@ -122,7 +122,7 @@
             <!-- Right Side: Theme Toggle and User Menu -->
             <div class="flex items-center space-x-4">
               <!-- Theme Toggle -->
-              <Button
+              <!-- <Button
                 variant="ghost"
                 size="sm"
                 @click="themeStore.toggleTheme"
@@ -135,7 +135,7 @@
               >
                 <SunIcon v-if="themeStore.theme === 'light'" class="w-4 h-4" />
                 <MoonIcon v-else class="w-4 h-4" />
-              </Button>
+              </Button> -->
 
               <!-- User Menu -->
               <UserProfile />
@@ -161,7 +161,6 @@
 <script setup>
 import { computed } from "vue";
 import { useUserStore } from "./stores/user";
-import { useThemeStore } from "./stores/theme";
 import Button from "@/components/ui/button.vue";
 import UserProfile from "@/components/UserProfile.vue";
 import AlertContainer from "@/components/AlertContainer.vue";
@@ -171,12 +170,9 @@ import {
   UploadIcon,
   AuditHistoryIcon,
   DocumentIcon,
-  SunIcon,
-  MoonIcon,
 } from "@/assets/icons";
 
 const userStore = useUserStore();
-const themeStore = useThemeStore();
 
 const isAuthenticated = computed(() => userStore.isAuthenticated);
 </script>

@@ -101,6 +101,13 @@ class ApiService {
     });
   }
 
+  async changePassword(passwordData) {
+    return this.request("/auth/change-password", {
+      method: "POST",
+      body: JSON.stringify(passwordData),
+    });
+  }
+
   // Admin endpoints
   async getUsers() {
     return this.request("/admin/users");

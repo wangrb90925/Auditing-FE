@@ -1,6 +1,6 @@
 import os
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from file_processor import FileProcessor
 from fmcsa_rules import FMCSARules
 
@@ -30,9 +30,12 @@ class AuditEngine:
             print("Applying FMCSA compliance rules...")
             violations = self.fmcsa_rules.analyze_compliance(extracted_data, driver_type)
             
+            # Get consolidated violations for cleaner reporting
+            consolidated_violations = self.fmcsa_rules.get_consolidated_violations()
+            
             # Step 3: Generate audit summary
             audit_summary = self._generate_audit_summary(
-                extracted_data, violations, driver_type, driver_name
+                extracted_data, consolidated_violations, driver_type, driver_name
             )
             
             # Step 4: Calculate compliance score
@@ -48,7 +51,8 @@ class AuditEngine:
                 'audit_date': datetime.now().isoformat(),
                 'files_processed': len(files),
                 'extracted_data_summary': self.file_processor.get_processed_data(),
-                'violations': violations,
+                'violations': violations,  # Keep original violations for detailed analysis
+                'consolidated_violations': consolidated_violations,  # Add consolidated for reporting
                 'violation_summary': self.fmcsa_rules.get_violation_summary(),
                 'compliance_score': compliance_score,
                 'severity': severity,
@@ -62,7 +66,7 @@ class AuditEngine:
                     {
                         'timestamp': datetime.now().isoformat(),
                         'step': 'compliance_analysis',
-                        'message': f'Found {len(violations)} FMCSA violations'
+                        'message': f'Found {len(violations)} FMCSA violations ({len(consolidated_violations)} unique types)'
                     },
                     {
                         'timestamp': datetime.now().isoformat(),
@@ -84,7 +88,7 @@ class AuditEngine:
                 'status': 'failed'
             }
     
-    def _generate_audit_summary(self, extracted_data, violations, driver_type, driver_name):
+    def _generate_audit_summary(self, extracted_data, consolidated_violations, driver_type, driver_name):
         """Generate a human-readable audit summary"""
         summary = {
             'driver_info': {
@@ -96,17 +100,19 @@ class AuditEngine:
                 'driver_logs': len(extracted_data.get('driver_logs', [])),
                 'fuel_receipts': len(extracted_data.get('fuel_receipts', [])),
                 'bills_of_lading': len(extracted_data.get('bills_of_lading', [])),
-                'audit_summaries': len(extracted_data.get('audit_summaries', []))
+                'audit_summaries': len(extracted_data.get('audit_summaries', [])),
             },
             'compliance_analysis': {
-                'total_violations': len(violations),
-                'hos_violations': len([v for v in violations if 'HOS' in v.get('type', '')]),
-                'form_violations': len([v for v in violations if 'FORM' in v.get('type', '').lower()]),
-                'falsification_violations': len([v for v in violations if 'FALSIFICATION' in v.get('type', '').lower()]),
-                'bol_violations': len([v for v in violations if 'BOL' in v.get('type', '')])
+                'total_violations': len(consolidated_violations),
+                'hos_violations': len([v for v in consolidated_violations if 'HOS' in v.get('type', '')]),
+                'form_violations': len([v for v in consolidated_violations if 'FORM' in v.get('type', '').lower()]),
+                'falsification_violations': len([v for v in consolidated_violations if 'FALSIFICATION' in v.get('type', '').lower()]),
+                'bol_violations': len([v for v in consolidated_violations if 'BOL' in v.get('type', '')]),
+                'fuel_violations': len([v for v in consolidated_violations if 'FUEL' in v.get('type', '')]),
+                'geographic_violations': len([v for v in consolidated_violations if 'GEOGRAPHIC' in v.get('type', '')])
             },
-            'key_findings': self._generate_key_findings(violations),
-            'recommendations': self._generate_recommendations(violations, driver_type)
+            'key_findings': self._generate_key_findings(consolidated_violations),
+            'recommendations': self._generate_recommendations(consolidated_violations, driver_type)
         }
         
         return summary
@@ -121,18 +127,20 @@ class AuditEngine:
             'duration_days': 31
         }
     
-    def _generate_key_findings(self, violations):
-        """Generate key findings from violations"""
+    def _generate_key_findings(self, consolidated_violations):
+        """Generate key findings from consolidated violations"""
         findings = []
         
-        if not violations:
+        if not consolidated_violations:
             findings.append("No FMCSA violations detected during the audit period.")
             return findings
         
-        # Group violations by type
-        hos_violations = [v for v in violations if 'HOS' in v.get('type', '')]
-        form_violations = [v for v in violations if 'FORM' in v.get('type', '').lower()]
-        falsification_violations = [v for v in violations if 'FALSIFICATION' in v.get('type', '').lower()]
+        # Group consolidated violations by type
+        hos_violations = [v for v in consolidated_violations if 'HOS' in v.get('type', '')]
+        form_violations = [v for v in consolidated_violations if 'FORM' in v.get('type', '').lower()]
+        falsification_violations = [v for v in consolidated_violations if 'FALSIFICATION' in v.get('type', '').lower()]
+        fuel_violations = [v for v in consolidated_violations if 'FUEL' in v.get('type', '')]
+        geographic_violations = [v for v in consolidated_violations if 'GEOGRAPHIC' in v.get('type', '')]
         
         if hos_violations:
             findings.append(f"Found {len(hos_violations)} Hours-of-Service violations requiring immediate attention.")
@@ -143,36 +151,64 @@ class AuditEngine:
         if falsification_violations:
             findings.append(f"Detected {len(falsification_violations)} potential log falsification issues.")
         
+        if fuel_violations:
+            findings.append(f"Found {len(fuel_violations)} fuel-related violations including off-duty fueling.")
+        
+        if geographic_violations:
+            findings.append(f"Detected {len(geographic_violations)} geographically implausible movements.")
+        
         # Add specific findings for major violations
-        major_violations = [v for v in violations if v.get('severity') == 'major']
+        major_violations = [v for v in consolidated_violations if v.get('severity') == 'major']
         if major_violations:
             findings.append(f"Critical: {len(major_violations)} major violations detected with significant penalty exposure.")
         
         return findings
     
-    def _generate_recommendations(self, violations, driver_type):
-        """Generate recommendations based on violations and driver type"""
+    def _generate_recommendations(self, consolidated_violations, driver_type):
+        """Generate recommendations based on consolidated violations and driver type"""
         recommendations = []
         
-        if not violations:
+        if not consolidated_violations:
             recommendations.append("Continue current compliance practices.")
             return recommendations
         
         # HOS-specific recommendations
-        hos_violations = [v for v in violations if 'HOS' in v.get('type', '')]
+        hos_violations = [v for v in consolidated_violations if 'HOS' in v.get('type', '')]
         if hos_violations:
             recommendations.append("Implement stricter Hours-of-Service monitoring and training.")
             recommendations.append("Consider using electronic logging devices (ELDs) for better accuracy.")
+            recommendations.append("Review consecutive driving and on-duty hour tracking procedures.")
         
         # Form and manner recommendations
-        form_violations = [v for v in violations if 'FORM' in v.get('type', '').lower()]
+        form_violations = [v for v in consolidated_violations if 'FORM' in v.get('type', '').lower()]
         if form_violations:
             recommendations.append("Provide additional training on proper log completion procedures.")
             recommendations.append("Implement log review processes before submission.")
+            recommendations.append("Ensure all required fields are completed accurately.")
+        
+        # Falsification recommendations
+        falsification_violations = [v for v in consolidated_violations if 'FALSIFICATION' in v.get('type', '').lower()]
+        if falsification_violations:
+            recommendations.append("Implement strict log verification procedures.")
+            recommendations.append("Consider random log audits and GPS verification.")
+            recommendations.append("Provide training on the serious consequences of log falsification.")
+        
+        # Fuel-related recommendations
+        fuel_violations = [v for v in consolidated_violations if 'FUEL' in v.get('type', '')]
+        if fuel_violations:
+            recommendations.append("Review fueling procedures and ensure compliance with duty status.")
+            recommendations.append("Implement fuel receipt verification against driver logs.")
+        
+        # Geographic implausibility recommendations
+        geographic_violations = [v for v in consolidated_violations if 'GEOGRAPHIC' in v.get('type', '')]
+        if geographic_violations:
+            recommendations.append("Implement GPS tracking and route verification procedures.")
+            recommendations.append("Review and validate all location entries in driver logs.")
         
         # Driver type specific recommendations
         if driver_type == 'long-haul':
             recommendations.append("Long-haul drivers require special attention to 60/70-hour rules.")
+            recommendations.append("Implement regular rest period monitoring for long-haul operations.")
         elif driver_type == 'short-haul':
             recommendations.append("Short-haul drivers should focus on 12-hour return requirements.")
         elif driver_type == 'exemption':
@@ -181,6 +217,7 @@ class AuditEngine:
         # General recommendations
         recommendations.append("Schedule regular compliance training sessions.")
         recommendations.append("Implement pre-trip log review procedures.")
+        recommendations.append("Establish a compliance monitoring system with regular audits.")
         
         return recommendations
     
@@ -189,19 +226,30 @@ class AuditEngine:
         if not violations:
             return 100
         
-        # Simple scoring algorithm
-        # Each violation reduces score by 5 points
-        # Different violation types have different weights
+        # Enhanced scoring algorithm with specific weights for different violation types
         total_penalty = 0
         
         for violation in violations:
+            violation_type = violation.get('type', '')
             severity = violation.get('severity', 'minor')
+            
+            # Base penalty by severity
             if severity == 'critical':
-                total_penalty += 15
+                base_penalty = 15
             elif severity == 'major':
-                total_penalty += 10
+                base_penalty = 10
             else:  # minor
-                total_penalty += 5
+                base_penalty = 5
+            
+            # Additional penalties for specific violation types
+            if 'HOS' in violation_type:
+                base_penalty += 5  # HOS violations are more serious
+            elif 'FALSIFICATION' in violation_type:
+                base_penalty += 10  # Falsification is very serious
+            elif 'GEOGRAPHIC' in violation_type:
+                base_penalty += 3   # Geographic issues suggest potential fraud
+            
+            total_penalty += base_penalty
         
         # Calculate score (minimum 0)
         score = max(0, 100 - total_penalty)
