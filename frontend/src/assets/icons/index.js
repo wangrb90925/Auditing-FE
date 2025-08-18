@@ -5,6 +5,7 @@ export { default as UploadIcon } from "./upload.vue";
 export { default as AuditHistoryIcon } from "./audit-history.vue";
 export { default as UserIcon } from "./user.vue";
 export { default as LogoutIcon } from "./logout.vue";
+export { default as AdminIcon } from "./admin.vue";
 
 // Action Icons
 export { default as PlusIcon } from "./plus.vue";

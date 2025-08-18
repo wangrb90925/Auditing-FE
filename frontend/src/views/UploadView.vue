@@ -11,7 +11,7 @@
       </p>
     </div>
 
-    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+    <div v-if="canUpload" class="grid grid-cols-1 lg:grid-cols-2 gap-8">
       <!-- Upload Form -->
       <Card class="bg-card/50 backdrop-blur-sm border-border/50">
         <CardHeader>
@@ -314,12 +314,101 @@
         </Card>
       </div>
     </div>
+
+    <!-- Loading State -->
+    <div v-else-if="!userStore.isInitialized" class="text-center py-12">
+      <div class="max-w-md mx-auto">
+        <div
+          class="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4"
+        >
+          <svg
+            class="w-8 h-8 text-blue-600 animate-spin"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+            ></path>
+          </svg>
+        </div>
+        <h3 class="text-lg font-medium text-gray-900 mb-2">Loading...</h3>
+        <p class="text-sm text-gray-500">
+          Please wait while we verify your permissions.
+        </p>
+      </div>
+    </div>
+
+    <!-- Not Authenticated Message -->
+    <div v-else-if="!userStore.isAuthenticated" class="text-center py-12">
+      <div class="max-w-md mx-auto">
+        <div
+          class="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4"
+        >
+          <svg
+            class="w-8 h-8 text-gray-400"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 002 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
+            ></path>
+          </svg>
+        </div>
+        <h3 class="text-lg font-medium text-gray-900 mb-2">Please Sign In</h3>
+        <p class="text-sm text-gray-500 mb-4">
+          You need to sign in to access the upload functionality.
+        </p>
+        <Button as-child>
+          <router-link to="/login">Sign In</router-link>
+        </Button>
+      </div>
+    </div>
+
+    <!-- Access Denied Message -->
+    <div v-else class="text-center py-12">
+      <div class="max-w-md mx-auto">
+        <div
+          class="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4"
+        >
+          <svg
+            class="w-8 h-8 text-red-600"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z"
+            ></path>
+          </svg>
+        </div>
+        <h3 class="text-lg font-medium text-gray-900 mb-2">Access Denied</h3>
+        <p class="text-sm text-gray-500 mb-4">
+          You don't have permission to upload files. Only auditors and
+          administrators can perform this action.
+        </p>
+        <Button as-child>
+          <router-link to="/dashboard">Back to Dashboard</router-link>
+        </Button>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive } from "vue";
+import { ref, reactive, computed, onMounted } from "vue";
 import { useRouter } from "vue-router";
+import { useUserStore } from "../stores/user";
 import { useAuditStore } from "../stores/audit";
 import { useAlert } from "../composables/useAlert";
 import Button from "@/components/ui/button.vue";
@@ -338,8 +427,47 @@ import {
 } from "@/assets/icons";
 
 const router = useRouter();
+const userStore = useUserStore();
 const auditStore = useAuditStore();
 const { showError, showSuccess } = useAlert();
+
+// Ensure userStore is available
+if (!userStore) {
+  console.error("userStore is not available");
+}
+
+// Safe computed property to prevent undefined errors
+const canUpload = computed(() => {
+  try {
+    // Check if userStore and its properties exist
+    if (!userStore || !userStore.isInitialized) {
+      return false;
+    }
+
+    // Check if user is authenticated
+    if (!userStore.isAuthenticated) {
+      return false;
+    }
+
+    // Check if user has upload permissions
+    if (userStore.canUpload === undefined) {
+      // Fallback to role-based check
+      return userStore.isAdmin || userStore.isAuditor;
+    }
+
+    return userStore.canUpload;
+  } catch (error) {
+    console.warn("Error accessing userStore properties:", error);
+    return false;
+  }
+});
+
+// Ensure user store is initialized
+onMounted(async () => {
+  if (!userStore.isInitialized) {
+    await userStore.initializeAuth();
+  }
+});
 
 const formData = reactive({
   driverName: "",

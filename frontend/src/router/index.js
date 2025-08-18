@@ -54,6 +54,18 @@ const routes = [
     component: () => import("../views/AuditDetailView.vue"),
     meta: { requiresAuth: true },
   },
+  {
+    path: "/profile",
+    name: "Profile",
+    component: () => import("../views/ProfileView.vue"),
+    meta: { requiresAuth: true },
+  },
+  {
+    path: "/admin",
+    name: "AdminPanel",
+    component: () => import("../views/AdminPanelView.vue"),
+    meta: { requiresAuth: true, requiresAdmin: true },
+  },
 ];
 
 const router = createRouter({
@@ -81,6 +93,8 @@ router.beforeEach(async (to, from, next) => {
   // Now make authentication decisions
   if (to.meta.requiresAuth && !userStore.isAuthenticated) {
     next("/login");
+  } else if (to.meta.requiresAdmin && userStore.user?.role !== "admin") {
+    next("/dashboard"); // Redirect non-admin users to dashboard
   } else if (
     (to.path === "/login" || to.path === "/signup") &&
     userStore.isAuthenticated
