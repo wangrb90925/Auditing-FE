@@ -1,5 +1,5 @@
 <template>
-  <div class="fixed top-4 right-4 z-50 space-y-2 pointer-events-none">
+  <div class="fixed top-4 right-4 z-50 space-y-2 pointer-events-none max-w-md">
     <TransitionGroup name="alert" tag="div" class="space-y-2">
       <Alert
         v-for="alert in alerts"

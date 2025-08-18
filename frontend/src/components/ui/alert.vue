@@ -1,9 +1,5 @@
 <template>
-  <div
-    v-if="isVisible"
-    class="fixed top-4 right-4 z-50 max-w-md w-full"
-    :class="alertClasses"
-  >
+  <div v-if="isVisible" class="max-w-md w-full" :class="alertClasses">
     <div
       class="flex items-start space-x-3 p-4 rounded-lg border shadow-lg backdrop-blur-sm"
     >
@@ -14,9 +10,15 @@
         <h3 v-if="title" class="text-sm font-medium text-foreground">
           {{ title }}
         </h3>
-        <p v-if="message" class="text-sm text-muted-foreground mt-1">
-          {{ message }}
-        </p>
+        <div v-if="message" class="text-sm text-muted-foreground mt-1">
+          <p
+            v-for="(line, index) in messageLines"
+            :key="index"
+            class="mb-1 last:mb-0"
+          >
+            {{ line }}
+          </p>
+        </div>
       </div>
       <button
         @click="close"
@@ -73,6 +75,11 @@ const icon = computed(() => {
     default:
       return InfoIcon;
   }
+});
+
+const messageLines = computed(() => {
+  if (!props.message) return [];
+  return props.message.split("\n").filter((line) => line.trim() !== "");
 });
 
 const alertClasses = computed(() => {
