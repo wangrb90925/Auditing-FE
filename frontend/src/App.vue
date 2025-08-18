@@ -96,13 +96,33 @@
                     <span class="font-medium">Audit History</span>
                   </router-link>
                 </Button>
+
+                <Button
+                  variant="ghost"
+                  as-child
+                  class="px-4 py-2 h-10 rounded-lg transition-all duration-200"
+                  :class="{
+                    'bg-primary/10 text-primary border border-primary/20':
+                      $route.path === '/reports',
+                    'text-muted-foreground hover:text-foreground hover:bg-muted/50':
+                      $route.path !== '/reports',
+                  }"
+                >
+                  <router-link
+                    to="/reports"
+                    class="flex items-center space-x-2"
+                  >
+                    <DocumentIcon class="w-4 h-4" />
+                    <span class="font-medium">Audit Reports</span>
+                  </router-link>
+                </Button>
               </div>
             </div>
 
             <!-- Right Side: Theme Toggle and User Menu -->
             <div class="flex items-center space-x-4">
               <!-- Theme Toggle -->
-              <Button
+              <!-- <Button
                 variant="ghost"
                 size="sm"
                 @click="themeStore.toggleTheme"
@@ -115,7 +135,7 @@
               >
                 <SunIcon v-if="themeStore.theme === 'light'" class="w-4 h-4" />
                 <MoonIcon v-else class="w-4 h-4" />
-              </Button>
+              </Button> -->
 
               <!-- User Menu -->
               <UserProfile />
@@ -132,30 +152,27 @@
         <router-view />
       </main>
     </div>
+
+    <!-- Alert Container -->
+    <AlertContainer />
   </div>
 </template>
 
 <script setup>
 import { computed } from "vue";
-import { useRouter } from "vue-router";
 import { useUserStore } from "./stores/user";
-import { useThemeStore } from "./stores/theme";
 import Button from "@/components/ui/button.vue";
 import UserProfile from "@/components/UserProfile.vue";
+import AlertContainer from "@/components/AlertContainer.vue";
 import {
   LogoIcon,
   DashboardIcon,
   UploadIcon,
   AuditHistoryIcon,
-  SunIcon,
-  MoonIcon,
+  DocumentIcon,
 } from "@/assets/icons";
 
-const router = useRouter();
 const userStore = useUserStore();
-const themeStore = useThemeStore();
 
 const isAuthenticated = computed(() => userStore.isAuthenticated);
-
-// Logout function is now handled in UserProfile component
 </script>
