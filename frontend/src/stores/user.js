@@ -102,6 +102,16 @@ export const useUserStore = defineStore("user", () => {
     }
   };
 
+  const changePassword = async (passwordData) => {
+    try {
+      const response = await apiService.changePassword(passwordData);
+      return { success: true, message: response.message };
+    } catch (error) {
+      console.error("Change password failed:", error);
+      return { success: false, error: error.message };
+    }
+  };
+
   const initializeAuth = async () => {
     console.log("🔧 Starting auth initialization...");
     try {
@@ -159,6 +169,7 @@ export const useUserStore = defineStore("user", () => {
     logout,
     getProfile,
     updateProfile,
+    changePassword,
     initializeAuth,
   };
 });
