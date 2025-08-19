@@ -224,7 +224,8 @@ class AuditEngine:
     def _calculate_compliance_score(self, violations):
         """Calculate compliance score based on violations"""
         if not violations:
-            return 100
+            # If no violations found, the file is 100% compliant
+            return 100.0
         
         # Enhanced scoring algorithm with specific weights for different violation types
         total_penalty = 0
@@ -235,23 +236,27 @@ class AuditEngine:
             
             # Base penalty by severity
             if severity == 'critical':
-                base_penalty = 15
+                base_penalty = 25
             elif severity == 'major':
-                base_penalty = 10
+                base_penalty = 20
             else:  # minor
-                base_penalty = 5
+                base_penalty = 10
             
             # Additional penalties for specific violation types
             if 'HOS' in violation_type:
-                base_penalty += 5  # HOS violations are more serious
+                base_penalty += 15  # HOS violations are more serious
             elif 'FALSIFICATION' in violation_type:
-                base_penalty += 10  # Falsification is very serious
+                base_penalty += 20  # Falsification is very serious
             elif 'GEOGRAPHIC' in violation_type:
-                base_penalty += 3   # Geographic issues suggest potential fraud
+                base_penalty += 8   # Geographic issues suggest potential fraud
+            elif 'FORM_MANNER' in violation_type:
+                base_penalty += 5   # Form violations are less serious but still important
+            elif 'COMPLIANCE_NO_FILES' in violation_type or 'COMPLIANCE_PROCESSING_FAILED' in violation_type:
+                base_penalty += 0   # No penalty for processing issues
             
             total_penalty += base_penalty
         
-        # Calculate score (minimum 0)
+        # Calculate score (minimum 0, maximum 100 for perfect compliance)
         score = max(0, 100 - total_penalty)
         
         return round(score, 1)

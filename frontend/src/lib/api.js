@@ -1,4 +1,6 @@
-const API_BASE_URL = "http://localhost:5000/api";
+// Use environment variable for API base URL with fallback
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL || "http://localhost:5000/api";
 
 class ApiService {
   constructor() {
@@ -7,7 +9,9 @@ class ApiService {
 
   // Get auth headers with token
   getAuthHeaders() {
-    const token = localStorage.getItem("access_token");
+    const token = localStorage.getItem(
+      import.meta.env.VITE_JWT_STORAGE_KEY || "access_token"
+    );
     return {
       "Content-Type": "application/json",
       ...(token && { Authorization: `Bearer ${token}` }),
