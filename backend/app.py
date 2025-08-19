@@ -367,8 +367,18 @@ def process_audit(audit_id):
         # Convert files to expected format
         files_data = [{'name': f.name, 'path': f.path, 'size': f.size} for f in audit.files]
         
-        # Process files
-        extracted_data = file_processor.process_files(files_data)
+        # Use the audit engine for comprehensive analysis
+        audit_results = audit_engine.process_audit(files_data, audit.driver_type, audit.driver_name or 'Unknown Driver')
+        
+        if 'error' in audit_results:
+            raise Exception(audit_results['error'])
+        
+        # Extract results from audit engine
+        violations = audit_results.get('violations', [])
+        consolidated_violations = audit_results.get('consolidated_violations', [])
+        compliance_score = audit_results.get('compliance_score', 100)
+        severity = audit_results.get('severity', 'low')
+        violation_summary = audit_results.get('violation_summary', {})
         
         processing_log.append({
             'timestamp': datetime.now().isoformat(),
@@ -376,42 +386,35 @@ def process_audit(audit_id):
             'message': f'Extracted data from {len(files_data)} files'
         })
         
-        # Apply FMCSA rules
-        violations = fmcsa_rules.analyze_compliance(extracted_data, audit.driver_type)
-        
         processing_log.append({
             'timestamp': datetime.now().isoformat(),
             'type': 'info',
             'message': f'Found {len(violations)} FMCSA violations'
         })
         
-        # Calculate compliance score
-        total_violations = len(violations)
-        compliance_score = max(0, 100 - (total_violations * 5))  # Simple scoring
-        
-        # Determine severity
-        if total_violations == 0:
-            severity = 'low'
-        elif total_violations <= 5:
-            severity = 'medium'
-        else:
-            severity = 'high'
-        
-        # Update audit with results
-        audit.violations = total_violations
+        # Update audit with comprehensive results
+        audit.violations = len(violations)
         audit.violations_list = json.dumps(violations)
         audit.compliance_score = compliance_score
         audit.severity = severity
-        audit.total_violations = total_violations
+        audit.total_violations = len(violations)
+        
+        # Count specific violation types
         audit.hos_violations = len([v for v in violations if 'HOS' in v.get('type', '')])
-        audit.form_violations = len([v for v in violations if 'form' in v.get('type', '').lower()])
-        audit.falsification_violations = len([v for v in violations if 'falsification' in v.get('type', '').lower()])
+        audit.form_violations = len([v for v in violations if 'FORM' in v.get('type', '').upper()])
+        audit.falsification_violations = len([v for v in violations if 'FALSIFICATION' in v.get('type', '').upper()])
+        
+        # Add additional violation counts
+        audit.bol_violations = len([v for v in violations if 'BOL' in v.get('type', '')])
+        audit.fuel_violations = len([v for v in violations if 'FUEL' in v.get('type', '')])
+        audit.geographic_violations = len([v for v in violations if 'GEOGRAPHIC' in v.get('type', '')])
+        
         audit.status = 'completed'
         
         processing_log.append({
             'timestamp': datetime.now().isoformat(),
             'type': 'success',
-            'message': f'Audit completed with {compliance_score}% compliance score'
+            'message': f'Audit completed with {compliance_score}% compliance score and {len(violations)} violations'
         })
         audit.processing_log = json.dumps(processing_log)
         
@@ -432,7 +435,8 @@ def process_audit(audit_id):
             audit.processing_log = json.dumps(processing_log)
             db.session.commit()
         
-        return jsonify({'error': str(e)}), 500
+        print(f"Error processing audit {audit_id}: {str(e)}")
+        return jsonify({'error': f'Failed to process audit: {str(e)}'}), 500
 
 @app.route('/api/audits', methods=['GET'])
 @jwt_required()
