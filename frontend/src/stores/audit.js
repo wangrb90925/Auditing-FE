@@ -72,11 +72,15 @@ export const useAuditStore = defineStore("audit", () => {
       isLoading.value = true;
       error.value = null;
 
+      console.log("🔍 Fetching audit from API:", auditId);
       const response = await apiService.getAudit(auditId);
+      console.log("📊 API Response:", response);
+
       currentAudit.value = response;
 
       return { success: true, audit: response };
     } catch (err) {
+      console.error("❌ Error fetching audit:", err);
       error.value = err.message;
       return { success: false, error: err.message };
     } finally {

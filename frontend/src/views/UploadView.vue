@@ -818,9 +818,17 @@ const handleSubmit = async () => {
     console.log("Audit processed successfully:", processResult.audit);
 
     // Step 4: Show success message and redirect
+    const rawScore = processResult.audit?.summary?.complianceScore;
+    const computedScore =
+      typeof rawScore === "number"
+        ? rawScore
+        : (processResult.audit?.violations || 0) > 0
+          ? 0
+          : 100;
+
     showSuccess(
       "Audit Completed Successfully",
-      `Driver: ${formData.driverName}\nType: ${formData.driverType}\nCompliance Score: ${processResult.audit.summary?.complianceScore || "N/A"}%\nViolations Found: ${processResult.audit.violations || 0}`,
+      `Driver: ${formData.driverName}\nType: ${formData.driverType}\nCompliance Score: ${computedScore}%\nViolations Found: ${processResult.audit.violations || 0}`,
       8000
     );
 

@@ -514,12 +514,9 @@
                         <div
                           class="w-12 h-8 bg-gradient-to-r from-green-100 to-blue-100 rounded-lg flex items-center justify-center mr-2"
                         >
-                          <span
-                            v-if="audit.summary"
-                            class="text-sm font-bold text-gray-700"
-                            >{{ audit.summary.complianceScore }}%</span
-                          >
-                          <span v-else class="text-sm text-gray-500">N/A</span>
+                          <span class="text-sm font-bold text-gray-700">
+                            {{ formatScore(audit) }}%
+                          </span>
                         </div>
                       </div>
                     </td>
@@ -1091,6 +1088,13 @@ const getStatusVariant = (status) => {
 };
 
 const formatDate = (dateString) => new Date(dateString).toLocaleDateString();
+
+const formatScore = (audit) => {
+  const raw = audit?.summary?.complianceScore;
+  if (typeof raw === "number") return raw;
+  const v = audit?.violations ?? 0;
+  return v > 0 ? 0 : 100;
+};
 
 const confirmDelete = async (audit) => {
   // Create a more user-friendly confirmation dialog

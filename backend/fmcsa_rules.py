@@ -13,9 +13,17 @@ class FMCSARules:
             'max_on_duty_hours': 14,  # Maximum on-duty hours per day
             'required_off_duty': 10,   # Required consecutive off-duty hours
             'max_60_hour_week': 60,    # Maximum hours in 7 days
-            'max_70_hour_week': 70     # Maximum hours in 8 days
+            'max_70_hour_week': 70,    # Maximum hours in 8 days
+            'required_break_time': 0.5,  # 30-minute break required after 8 hours driving
+            'max_14_hour_window': 14,   # 14-hour window from first on-duty time
+            'max_70_hour_8_days': 70    # 70 hours in 8 consecutive days
         }
+        
+        # Track fuel transactions for cross-referencing
+        self.fuel_transactions = []
+        self.driver_logs_data = []
     
+
     def _add_violation(self, violation_data):
         """Add a violation with deduplication logic"""
         # Create a unique key for this violation type and date
@@ -39,27 +47,44 @@ class FMCSARules:
         """Analyze compliance with FMCSA rules"""
         self.violations = []
         self.violation_keys = set()  # Reset violation tracking
+        self.fuel_transactions = []
+        self.driver_logs_data = []
+        
+        # Store data for cross-referencing
+        driver_logs = extracted_data.get('driver_logs', [])
+        fuel_receipts = extracted_data.get('fuel_receipts', [])
+        bills_of_lading = extracted_data.get('bills_of_lading', [])
+        weekly_summaries = extracted_data.get('weekly_summaries', [])
+        
+        # Store driver logs for cross-referencing
+        for log_data in driver_logs:
+            if log_data.get('type') == 'driver_log':
+                self.driver_logs_data.append(log_data)
+        
+        # Store fuel transactions for cross-referencing
+        for receipt_data in fuel_receipts:
+            if receipt_data.get('type') == 'fuel_receipt' or 'fuel' in receipt_data.get('file_name', '').lower():
+                self.fuel_transactions.append(receipt_data)
         
         # Process driver logs
-        driver_logs = extracted_data.get('driver_logs', [])
         for log_data in driver_logs:
             if log_data.get('type') == 'driver_log':
                 self._analyze_driver_log_compliance(log_data, driver_type)
         
         # Process fuel receipts
-        fuel_receipts = extracted_data.get('fuel_receipts', [])
         for receipt_data in fuel_receipts:
             self._check_fuel_receipt_compliance(receipt_data)
         
         # Process Bills of Lading
-        bills_of_lading = extracted_data.get('bills_of_lading', [])
         for bol_data in bills_of_lading:
             self._check_bol_compliance(bol_data)
         
         # Process weekly summaries
-        weekly_summaries = extracted_data.get('weekly_summaries', [])
         for summary_data in weekly_summaries:
             self._check_weekly_summary_compliance(summary_data)
+        
+        # Cross-reference fuel transactions with driver logs
+        self._check_fuel_transaction_compliance()
         
         # Check for log falsification
         if driver_logs:
@@ -68,6 +93,15 @@ class FMCSARules:
         # Check for implausible behavior
         if driver_logs and bills_of_lading:
             self._check_geographic_implausibility(driver_logs, bills_of_lading)
+        
+        # Check for missing location violations
+        self._check_missing_location_violations()
+        
+        # Check for PC misuse violations
+        self._check_pc_misuse_violations()
+        
+        # Check for distance/mileage violations
+        self._check_distance_mileage_violations()
         
         # If no violations found, add a basic compliance check
         if not self.violations:
@@ -80,6 +114,7 @@ class FMCSARules:
         entries = log_data.get('entries', [])
         
         if not entries:
+
             # Add violation for missing log entries
             self._add_violation({
                 'date': 'unknown',
@@ -111,6 +146,7 @@ class FMCSARules:
         self._check_form_manner_violations(log_data)
         
         # Check for driving while off duty
+
         for date, day_entries in daily_entries.items():
             self._check_driving_while_off_duty(date, day_entries)
         
@@ -131,6 +167,10 @@ class FMCSARules:
         # Track consecutive hours
         consecutive_on_duty_start = None
         consecutive_off_duty_start = None
+        first_on_duty_time = None  # Track first on-duty time for 14-hour window
+        driving_sessions = []  # Track driving sessions for break violations
+        current_driving_session = None
+
         last_duty_status = None
         
         for entry in sorted_entries:
@@ -143,6 +183,7 @@ class FMCSARules:
                 if not time_str:
                     continue
                 
+
                 # Check for impossible duty status transitions - only flag clearly invalid ones
                 if last_duty_status and not self._is_valid_status_transition(last_duty_status, status):
                     # Only flag if this is clearly impossible (e.g., driving -> driving without off duty)
@@ -179,6 +220,12 @@ class FMCSARules:
                     
                     if current_status == 'driving':
                         total_driving_hours += duration
+                        
+                        # Track driving session for break violations
+                        if current_driving_session is None:
+                            current_driving_session = {'start': status_start_time, 'total_hours': 0}
+                        current_driving_session['total_hours'] += duration
+                        
                         # Check consecutive on-duty hours
                         if consecutive_on_duty_start:
                             consecutive_on_duty_duration = self._calculate_duration(consecutive_on_duty_start, time_str)
@@ -194,9 +241,19 @@ class FMCSARules:
                     
                     elif current_status in ['on duty', 'driving']:
                         total_on_duty_hours += duration
+                        
+                        # Track first on-duty time for 14-hour window
+                        if first_on_duty_time is None:
+                            first_on_duty_time = status_start_time
                     
                     elif current_status == 'off duty':
                         off_duty_periods.append(duration)
+                        
+                        # End current driving session if exists
+                        if current_driving_session:
+                            driving_sessions.append(current_driving_session)
+                            current_driving_session = None
+                        
                         # Check if we had 10 consecutive hours off duty
                         if consecutive_off_duty_start:
                             consecutive_off_duty_duration = self._calculate_duration(consecutive_off_duty_start, time_str)
@@ -215,10 +272,12 @@ class FMCSARules:
                 
                 current_status = status
                 status_start_time = time_str
+
                 last_duty_status = status
         
         # Check driving hours violation
         if total_driving_hours > self.hos_rules['max_driving_hours']:
+
             self._add_violation({
                 'date': date,
                 'type': 'HOS_DRIVING_HOURS_EXCEEDED',
@@ -230,6 +289,7 @@ class FMCSARules:
         
         # Check on-duty hours violation
         if total_on_duty_hours > self.hos_rules['max_on_duty_hours']:
+
             self._add_violation({
                 'date': date,
                 'type': 'HOS_ON_DUTY_HOURS_EXCEEDED',
@@ -238,6 +298,16 @@ class FMCSARules:
                 'penalty': '$2,750',
                 'section': '395.3(a)(2)'
             })
+        
+        # Add final driving session if exists
+        if current_driving_session:
+            driving_sessions.append(current_driving_session)
+        
+        # Check for 30-minute break violations
+        self._check_break_violations(date, driving_sessions)
+        
+        # Check for 14-hour window violations
+        self._check_14_hour_window_violation(date, first_on_duty_time, sorted_entries)
         
         # Check for insufficient off-duty time only if we have a complete day
         # Don't flag this for single-day logs or incomplete data
@@ -262,18 +332,20 @@ class FMCSARules:
                 })
     
     def _check_multi_day_compliance(self, daily_entries, driver_type):
-        """Check 60/70 hour weekly limits"""
+        """Check 60/70 hour weekly limits and 70/8 cycle rule"""
         if not daily_entries or len(daily_entries) < 7:
             # Need at least 7 days to check weekly limits
             return
         
+        # Sort dates to ensure proper order
+        sorted_dates = sorted(daily_entries.keys())
+        
         # Calculate total hours for the week
         week_hours = 0
-        week_start = None
+        week_start = sorted_dates[0] if sorted_dates else None
         
-        for date, entries in daily_entries.items():
-            if not week_start:
-                week_start = date
+        for date in sorted_dates:
+            entries = daily_entries[date]
             
             # Calculate total on-duty hours for this day
             day_hours = 0
@@ -288,12 +360,9 @@ class FMCSARules:
             week_hours += day_hours
         
         # Check 60/70 hour limits only if we have reasonable data
-        # Be more realistic with estimated hours from ELD data
         if week_hours > 0:  # Only check if we have some data
-            # Since we're estimating hours (assuming 8 hours per entry), be more lenient
-            # Real ELD data often has gaps, so estimated hours may be inflated
             if driver_type == 'long-haul':
-                if week_hours > self.hos_rules['max_70_hour_week'] * 1.2:  # Allow 20% buffer for estimates
+                if week_hours > self.hos_rules['max_70_hour_week']:
                     self._add_violation({
                         'date': week_start or 'unknown',
                         'type': 'HOS_WEEKLY_LIMIT_EXCEEDED',
@@ -303,7 +372,7 @@ class FMCSARules:
                         'section': '395.3(b)'
                     })
             else:
-                if week_hours > self.hos_rules['max_60_hour_week'] * 1.2:  # Allow 20% buffer for estimates
+                if week_hours > self.hos_rules['max_60_hour_week']:
                     self._add_violation({
                         'date': week_start or 'unknown',
                         'type': 'HOS_WEEKLY_LIMIT_EXCEEDED',
@@ -312,16 +381,49 @@ class FMCSARules:
                         'penalty': '$2,750',
                         'section': '395.3(b)'
                     })
+        
+        # Check 70/8 cycle rule (70 hours in any 8 consecutive days)
+        if len(sorted_dates) >= 8:
+            for i in range(len(sorted_dates) - 7):  # Check every 8-day window
+                eight_day_hours = 0
+                for j in range(i, i + 8):
+                    if j < len(sorted_dates):
+                        date = sorted_dates[j]
+                        entries = daily_entries[date]
+                        
+                        # Calculate hours for this day
+                        day_hours = 0
+                        for entry in entries:
+                            duty_statuses = entry.get('duty_status', [])
+                            for status_info in duty_statuses:
+                                status = status_info.get('status', '').lower()
+                                if status in ['driving', 'on duty']:
+                                    day_hours += 8  # Estimate
+                        
+                        eight_day_hours += day_hours
+                
+                if eight_day_hours > self.hos_rules['max_70_hour_8_days']:
+                    self._add_violation({
+                        'date': sorted_dates[i] if i < len(sorted_dates) else 'unknown',
+                        'type': 'HOS_70_8_CYCLE_VIOLATION',
+                        'description': f'70/8 cycle rule violated: {eight_day_hours} hours in 8 consecutive days',
+                        'severity': 'major',
+                        'penalty': '$2,750',
+                        'section': '395.3(b)'
+                    })
     
     def _check_form_manner_violations(self, log_data):
+
         """Check for form and manner violations - only flag clear, actual violations"""
         entries = log_data.get('entries', [])
         
+
         # Only check if we have multiple entries to establish a pattern
         if len(entries) < 2:
             return
         
         for entry in entries:
+
             # Only flag missing fields if they're truly missing and critical
             if not entry.get('date') and len(entries) > 1:
                 # Only flag if we have other entries with dates to compare
@@ -329,22 +431,27 @@ class FMCSARules:
                 if other_dates:
                     self._add_violation({
                         'date': 'unknown',
-                        'type': 'FORM_MANNER_MISSING_DATE',
-                        'description': 'Missing date in driver log entry',
-                        'severity': 'minor',
+                    'type': 'FORM_MANNER_MISSING_DATE',
+                    'description': 'Missing date in driver log entry',
+                    'severity': 'minor',
+
                         'penalty': '$1,375',
                         'section': '395.8(d)'
-                    })
+                })
             
+
             # Only flag missing duty status if it's clearly a log entry
             duty_statuses = entry.get('duty_status', [])
+
             if not duty_statuses and entry.get('time'):
                 # Only flag if this looks like it should have a duty status
                 self._add_violation({
                     'date': entry.get('date', 'unknown'),
                     'type': 'FORM_MANNER_MISSING_DUTY_STATUS',
+
                     'description': 'Missing duty status for timed entry',
                     'severity': 'minor',
+
                     'penalty': '$1,375',
                     'section': '395.8(d)'
                 })
@@ -355,6 +462,7 @@ class FMCSARules:
             duty_statuses = entry.get('duty_status', [])
             for status_info in duty_statuses:
                 status = status_info.get('status', '').lower()
+
                 if status == 'off duty' and entry.get('activity') == 'driving':
                     self._add_violation({
                         'date': date,
@@ -475,7 +583,8 @@ class FMCSARules:
         
         # Check if this is identified as a fuel receipt
         if receipt_data.get('type') == 'fuel_receipt' or 'fuel' in receipt_data.get('file_name', '').lower():
-            # Check for fueling while off duty
+        # Check for fueling while off duty
+
             duty_status = receipt_data.get('duty_status', '').lower()
             if duty_status == 'off duty':
                 self._add_violation({
@@ -526,9 +635,10 @@ class FMCSARules:
             if not bol_data.get('bol_number'):
                 self._add_violation({
                     'date': bol_data.get('date', 'unknown'),
-                    'type': 'BOL_MISSING_NUMBER',
-                    'description': 'Missing Bill of Lading number',
-                    'severity': 'minor',
+                'type': 'BOL_MISSING_NUMBER',
+                'description': 'Missing Bill of Lading number',
+                'severity': 'minor',
+
                     'penalty': '$1,375',
                     'section': '395.8(d)'
                 })
@@ -549,7 +659,8 @@ class FMCSARules:
                     'date': summary_data.get('date', 'unknown'),
                     'type': 'WEEKLY_SUMMARY_MISSING_TOTALS',
                     'description': 'Weekly summary missing total hours calculation',
-                    'severity': 'minor',
+                'severity': 'minor',
+
                     'penalty': '$1,375',
                     'section': '395.8(d)'
                 })
@@ -627,6 +738,7 @@ class FMCSARules:
     def _calculate_duration(self, start_time, end_time):
         """Calculate duration between two time strings"""
         try:
+
             start = datetime.strptime(start_time, '%H:%M')
             end = datetime.strptime(end_time, '%H:%M')
             
@@ -635,8 +747,10 @@ class FMCSARules:
                 end += timedelta(days=1)
             
             duration = (end - start).total_seconds() / 3600  # Convert to hours
+
             return duration
         except:
+
             return 0  # Return 0 if time parsing fails
     
     def get_consolidated_violations(self):
@@ -667,11 +781,13 @@ class FMCSARules:
         return consolidated
     
     def get_violation_summary(self):
+
         """Get summary of violations by category"""
         if not self.violations:
             return {'total': 0, 'by_severity': {}, 'by_type': {}}
         
         summary = {
+
             'total': len(self.violations),
             'by_severity': {},
             'by_type': {}
@@ -688,3 +804,161 @@ class FMCSARules:
             summary['by_type'][violation_type] = summary['by_type'].get(violation_type, 0) + 1
         
         return summary 
+    
+    def _check_break_violations(self, date, driving_sessions):
+        """Check for 30-minute break violations after 8 hours of driving"""
+        for session in driving_sessions:
+            if session['total_hours'] >= 8:  # 8 hours of driving requires 30-minute break
+                # Check if there was a break of at least 30 minutes
+                # This would need to be cross-referenced with off-duty periods
+                # For now, we'll flag if driving session is longer than 8 hours without break
+                if session['total_hours'] > 8.5:  # Allow some buffer
+                    self._add_violation({
+                        'date': date,
+                        'type': 'HOS_BREAK_VIOLATION',
+                        'description': f'30-minute break required after 8 hours driving: {session["total_hours"]:.1f} hours without break',
+                        'severity': 'major',
+                        'penalty': '$2,750',
+                        'section': '395.3(a)(3)'
+                    })
+    
+    def _check_14_hour_window_violation(self, date, first_on_duty_time, entries):
+        """Check for 14-hour window violations"""
+        if not first_on_duty_time or not entries:
+            return
+        
+        # Find the last on-duty or driving time
+        last_on_duty_time = None
+        for entry in reversed(entries):
+            duty_statuses = entry.get('duty_status', [])
+            for status_info in duty_statuses:
+                status = status_info.get('status', '').lower()
+                if status in ['on duty', 'driving']:
+                    last_on_duty_time = entry.get('time', '')
+                    break
+            if last_on_duty_time:
+                break
+        
+        if last_on_duty_time:
+            window_duration = self._calculate_duration(first_on_duty_time, last_on_duty_time)
+            if window_duration > self.hos_rules['max_14_hour_window']:
+                self._add_violation({
+                    'date': date,
+                    'type': 'HOS_14_HOUR_WINDOW_VIOLATION',
+                    'description': f'14-hour window exceeded: {window_duration:.1f} hours from first on-duty time',
+                    'severity': 'major',
+                    'penalty': '$2,750',
+                    'section': '395.3(a)(2)'
+                })
+    
+    def _check_fuel_transaction_compliance(self):
+        """Check fuel transactions against driver logs for compliance"""
+        for fuel_transaction in self.fuel_transactions:
+            fuel_date = fuel_transaction.get('date', '')
+            fuel_time = fuel_transaction.get('time', '')
+            
+            if not fuel_date or not fuel_time:
+                continue
+            
+            # Find corresponding driver log entry
+            found_on_duty_time = False
+            for log_data in self.driver_logs_data:
+                entries = log_data.get('entries', [])
+                for entry in entries:
+                    entry_date = entry.get('date', '')
+                    if entry_date == fuel_date:
+                        duty_statuses = entry.get('duty_status', [])
+                        for status_info in duty_statuses:
+                            status = status_info.get('status', '').lower()
+                            if status in ['on duty', 'driving']:
+                                found_on_duty_time = True
+                                break
+                        if found_on_duty_time:
+                            break
+                if found_on_duty_time:
+                    break
+            
+            if not found_on_duty_time:
+                self._add_violation({
+                    'date': fuel_date,
+                    'type': 'FUEL_WITHOUT_ON_DUTY_TIME',
+                    'description': f'Fuel transaction without corresponding on-duty time on {fuel_date}',
+                    'severity': 'major',
+                    'penalty': '$2,750',
+                    'section': '395.2'
+                })
+    
+    def _check_missing_location_violations(self):
+        """Check for missing location information in driver logs"""
+        for log_data in self.driver_logs_data:
+            entries = log_data.get('entries', [])
+            for entry in entries:
+                date = entry.get('date', '')
+                location = entry.get('location', '')
+                
+                # Check if location is missing or empty
+                if not location or location.strip() == '' or location.lower() in ['', 'n/a', 'none', 'unknown']:
+                    self._add_violation({
+                        'date': date,
+                        'type': 'FORM_MANNER_MISSING_LOCATION',
+                        'description': f'Missing location information in driver log on {date}',
+                        'severity': 'minor',
+                        'penalty': '$1,375',
+                        'section': '395.8(d)'
+                    })
+    
+    def _check_pc_misuse_violations(self):
+        """Check for Personal Conveyance (PC) misuse violations"""
+        for log_data in self.driver_logs_data:
+            entries = log_data.get('entries', [])
+            for entry in entries:
+                duty_statuses = entry.get('duty_status', [])
+                for status_info in duty_statuses:
+                    status = status_info.get('status', '').lower()
+                    remarks = status_info.get('remarks', '').lower()
+                    
+                    # Check for PC misuse patterns
+                    if 'pc' in remarks or 'personal conveyance' in remarks:
+                        # Check if PC is being used inappropriately
+                        if 'driving' in status and 'pc' in remarks:
+                            # PC should not be used while driving for commercial purposes
+                            self._add_violation({
+                                'date': entry.get('date', ''),
+                                'type': 'PC_MISUSE_VIOLATION',
+                                'description': f'Misuse of Personal Conveyance (PC) on {entry.get("date", "")}',
+                                'severity': 'major',
+                                'penalty': '$2,750',
+                                'section': '395.2'
+                            })
+    
+    def _check_distance_mileage_violations(self):
+        """Check for distance/mileage changes without corresponding driving time"""
+        for log_data in self.driver_logs_data:
+            entries = log_data.get('entries', [])
+            for i, entry in enumerate(entries):
+                current_miles = entry.get('miles', 0)
+                current_driving_time = 0
+                
+                # Calculate driving time for this entry
+                duty_statuses = entry.get('duty_status', [])
+                for status_info in duty_statuses:
+                    status = status_info.get('status', '').lower()
+                    if status == 'driving':
+                        # Estimate driving time (this would be more accurate with actual time data)
+                        current_driving_time += 1  # Assume 1 hour per driving entry
+                
+                # Check if there's a significant mileage change without driving time
+                if i > 0:
+                    prev_entry = entries[i-1]
+                    prev_miles = prev_entry.get('miles', 0)
+                    mileage_change = current_miles - prev_miles
+                    
+                    if mileage_change > 0 and current_driving_time == 0:
+                        self._add_violation({
+                            'date': entry.get('date', ''),
+                            'type': 'DISTANCE_MILEAGE_VIOLATION',
+                            'description': f'Distance/mileage change without corresponding driving time: +{mileage_change} miles',
+                            'severity': 'major',
+                            'penalty': '$2,750',
+                            'section': '395.8(d)'
+                        })

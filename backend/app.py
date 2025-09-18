@@ -367,8 +367,11 @@ def process_audit(audit_id):
         # Convert files to expected format
         files_data = [{'name': f.name, 'path': f.path, 'size': f.size} for f in audit.files]
         
-        # Use the audit engine for comprehensive analysis
-        audit_results = audit_engine.process_audit(files_data, audit.driver_type, audit.driver_name or 'Unknown Driver')
+        # Use a fresh audit engine instance for comprehensive analysis
+        fresh_audit_engine = AuditEngine()
+        print(f"🔍 Processing audit with {len(files_data)} files")
+        audit_results = fresh_audit_engine.process_audit(files_data, audit.driver_type, audit.driver_name or 'Unknown Driver')
+        print(f"🔍 Audit results: compliance_score={audit_results.get('compliance_score')}, violations={len(audit_results.get('violations', []))}")
         
         if 'error' in audit_results:
             raise Exception(audit_results['error'])
