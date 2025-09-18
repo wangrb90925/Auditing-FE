@@ -54,6 +54,7 @@ class FMCSARules:
         driver_logs = extracted_data.get('driver_logs', [])
         fuel_receipts = extracted_data.get('fuel_receipts', [])
         bills_of_lading = extracted_data.get('bills_of_lading', [])
+        raw_text_blobs = [a for a in extracted_data.get('audit_summaries', []) if a.get('type') == 'raw_text']
         weekly_summaries = extracted_data.get('weekly_summaries', [])
         
         # Store driver logs for cross-referencing
@@ -103,6 +104,13 @@ class FMCSARules:
         # Check for distance/mileage violations
         self._check_distance_mileage_violations()
         
+        # Heuristic raw-text scans for additional violations
+        if raw_text_blobs:
+            self._scan_raw_text_for_pc(raw_text_blobs)
+            self._scan_raw_text_for_missing_locations(raw_text_blobs)
+            self._scan_raw_text_for_fuel_without_on_duty(raw_text_blobs)
+            self._scan_raw_text_for_hos_patterns(raw_text_blobs)
+
         # If no violations found, add a basic compliance check
         if not self.violations:
             self._add_basic_compliance_check(extracted_data)
@@ -272,11 +280,14 @@ class FMCSARules:
                 
                 current_status = status
                 status_start_time = time_str
-
+        
                 last_duty_status = status
         
-        # Check driving hours violation
-        if total_driving_hours > self.hos_rules['max_driving_hours']:
+        # Check driving hours violation (only when we have sufficient evidence for a full day)
+        sufficient_entries = len(sorted_entries) >= 5
+        has_early = any(e.get('time','') <= '06:00' for e in sorted_entries)
+        has_late = any(e.get('time','') >= '18:00' for e in sorted_entries)
+        if total_driving_hours > self.hos_rules['max_driving_hours'] and (sufficient_entries or (has_early and has_late)):
 
             self._add_violation({
                 'date': date,
@@ -287,8 +298,8 @@ class FMCSARules:
                 'section': '395.3(a)(1)'
             })
         
-        # Check on-duty hours violation
-        if total_on_duty_hours > self.hos_rules['max_on_duty_hours']:
+        # Check on-duty hours violation (only when we have sufficient evidence for a full day)
+        if total_on_duty_hours > self.hos_rules['max_on_duty_hours'] and (sufficient_entries or (has_early and has_late)):
 
             self._add_violation({
                 'date': date,
@@ -346,7 +357,7 @@ class FMCSARules:
         
         for date in sorted_dates:
             entries = daily_entries[date]
-            
+
             # Calculate total on-duty hours for this day
             day_hours = 0
             for entry in entries:
@@ -356,7 +367,7 @@ class FMCSARules:
                     if status in ['driving', 'on duty']:
                         # Estimate duration (this would be more accurate with actual time data)
                         day_hours += 8  # Assume 8 hours if no specific time data
-            
+
             week_hours += day_hours
         
         # Check 60/70 hour limits only if we have reasonable data
@@ -431,13 +442,13 @@ class FMCSARules:
                 if other_dates:
                     self._add_violation({
                         'date': 'unknown',
-                    'type': 'FORM_MANNER_MISSING_DATE',
+                        'type': 'FORM_MANNER_MISSING_DATE',
                     'description': 'Missing date in driver log entry',
                     'severity': 'minor',
 
                         'penalty': '$1,375',
                         'section': '395.8(d)'
-                })
+                    })
             
 
             # Only flag missing duty status if it's clearly a log entry
@@ -583,9 +594,9 @@ class FMCSARules:
         
         # Check if this is identified as a fuel receipt
         if receipt_data.get('type') == 'fuel_receipt' or 'fuel' in receipt_data.get('file_name', '').lower():
-        # Check for fueling while off duty
+            # Check for fueling while off duty
 
-            duty_status = receipt_data.get('duty_status', '').lower()
+            duty_status = (receipt_data.get('duty_status') or '').lower()
             if duty_status == 'off duty':
                 self._add_violation({
                     'date': receipt_data.get('date', 'unknown'),
@@ -635,10 +646,9 @@ class FMCSARules:
             if not bol_data.get('bol_number'):
                 self._add_violation({
                     'date': bol_data.get('date', 'unknown'),
-                'type': 'BOL_MISSING_NUMBER',
-                'description': 'Missing Bill of Lading number',
-                'severity': 'minor',
-
+                    'type': 'BOL_MISSING_NUMBER',
+                    'description': 'Missing Bill of Lading number',
+                    'severity': 'minor',
                     'penalty': '$1,375',
                     'section': '395.8(d)'
                 })
@@ -659,8 +669,7 @@ class FMCSARules:
                     'date': summary_data.get('date', 'unknown'),
                     'type': 'WEEKLY_SUMMARY_MISSING_TOTALS',
                     'description': 'Weekly summary missing total hours calculation',
-                'severity': 'minor',
-
+                    'severity': 'minor',
                     'penalty': '$1,375',
                     'section': '395.8(d)'
                 })
@@ -804,6 +813,116 @@ class FMCSARules:
             summary['by_type'][violation_type] = summary['by_type'].get(violation_type, 0) + 1
         
         return summary 
+
+    # --- Heuristic raw text scanners ---
+    def _scan_raw_text_for_pc(self, raw_text_blobs):
+        for blob in raw_text_blobs:
+            text = (blob.get('content') or '').lower()
+            # Look for PC markers on lines that also show speed/miles/driving context
+            for line in text.split('\n'):
+                l = line.lower()
+                if (' pc ' in f" {l} " or 'personal conveyance' in l) and ('drive' in l or 'driving' in l or 'mi' in l or 'mph' in l):
+                    self._add_violation({
+                        'date': self._extract_any_date(l) or 'unknown',
+                        'type': 'PC_MISUSE_VIOLATION',
+                        'description': 'Misuse of Personal Conveyance (PC) detected in log remarks',
+                        'severity': 'major',
+                        'penalty': '$2,750',
+                        'section': '395.2'
+                    })
+
+    def _scan_raw_text_for_missing_locations(self, raw_text_blobs):
+        # If logs show headers for location columns but many lines lack city/state, flag per date
+        for blob in raw_text_blobs:
+            text = blob.get('content') or ''
+            lines = [ln for ln in text.split('\n') if ln.strip()]
+            missing_by_date = {}
+            for ln in lines:
+                date = self._extract_any_date(ln)
+                if not date:
+                    continue
+                # Heuristic: if a line looks like a status/time line but lacks a comma (city, ST)
+                if re.search(r'\b(OFF|ON|DRIVING|SLEEPER|OFF DUTY|ON DUTY)\b', ln, re.I) and ',' not in ln and self._is_valid_date_string(date):
+                    missing_by_date[date] = True
+            for date in missing_by_date.keys():
+                self._add_violation({
+                    'date': date,
+                    'type': 'FORM_MANNER_MISSING_LOCATION',
+                    'description': f'Missing location in driver log on {date}',
+                    'severity': 'minor',
+                    'penalty': '$1,375',
+                    'section': '395.8(d)'
+                })
+
+    def _scan_raw_text_for_fuel_without_on_duty(self, raw_text_blobs):
+        # Very simple: detect lines that say Fuel or Receipt with amounts but nearby OFF/PC
+        for blob in raw_text_blobs:
+            text = blob.get('content') or ''
+            lines = [ln for ln in text.split('\n') if ln.strip()]
+            for i, ln in enumerate(lines):
+                if re.search(r'\b(fuel|receipt|diesel|gallon|gal)\b', ln, re.I):
+                    date = self._extract_any_date(ln) or self._extract_any_date(' '.join(lines[max(0, i-2):i+3]))
+                    window = ' '.join(lines[max(0, i-3):i+4]).lower()
+                    if 'off duty' in window or ' pc ' in f" {window} ":
+                        self._add_violation({
+                            'date': date or 'unknown',
+                            'type': 'FUEL_WITHOUT_ON_DUTY_TIME',
+                            'description': 'Fuel transaction without corresponding on-duty time',
+                            'severity': 'major',
+                            'penalty': '$2,750',
+                            'section': '395.2'
+                        })
+
+    def _scan_raw_text_for_hos_patterns(self, raw_text_blobs):
+        # Detect textual mentions of long continuous driving and missing breaks
+        for blob in raw_text_blobs:
+            text = (blob.get('content') or '').lower()
+            # Look for patterns like "driving 11:30" or total driving > 11 mentioned
+            if re.search(r'driving\s*(1[12]:\d\d|1[2-9]\.\d|1[2-9] hours?)', text):
+                self._add_violation({
+                    'date': self._extract_any_date(text) or 'unknown',
+                    'type': 'HOS_DRIVING_HOURS_EXCEEDED',
+                    'description': 'Text indicates driving duration beyond 11 hours',
+                    'severity': 'major',
+                    'penalty': '$2,750',
+                    'section': '395.3(a)(1)'
+                })
+            # Break mention
+            if re.search(r'(no\s*30\s*min|miss(ing)?\s*30\s*min|no break)', text):
+                self._add_violation({
+                    'date': self._extract_any_date(text) or 'unknown',
+                    'type': 'HOS_BREAK_VIOLATION',
+                    'description': 'Text indicates missing 30-minute break after 8 hours driving',
+                    'severity': 'major',
+                    'penalty': '$2,750',
+                    'section': '395.3(a)(3)'
+                })
+
+    def _extract_any_date(self, text):
+        try:
+            # Numeric formats MM/DD(/YY|YYYY) or MM-DD(-YY|YYYY)
+            m = re.search(r'(\b\d{1,2}/\d{1,2}/\d{2,4}\b|\b\d{1,2}-\d{1,2}-\d{2,4}\b|\b\d{1,2}/\d{1,2}\b|\b\d{1,2}-\d{1,2}\b)', text)
+            if m:
+                return m.group(1)
+            # Month name formats (avoid generic words like OFF)
+            month_names = '(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec|January|February|March|April|June|July|August|September|October|November|December)'
+            m = re.search(rf'\b{month_names}\s+\d{{1,2}}\b', text, re.I)
+            if m:
+                return m.group(0)
+        except Exception:
+            return None
+        return None
+
+    def _is_valid_date_string(self, s: str) -> bool:
+        # accept numeric formats or real month names only
+        if re.match(r'^\d{1,2}/\d{1,2}(/\d{2,4})?$', s):
+            return True
+        if re.match(r'^\d{1,2}-\d{1,2}(-\d{2,4})?$', s):
+            return True
+        months = 'Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec|January|February|March|April|June|July|August|September|October|November|December'
+        if re.match(rf'^(?:{months})\s+\d{{1,2}}$', s, re.I):
+            return True
+        return False
     
     def _check_break_violations(self, date, driving_sessions):
         """Check for 30-minute break violations after 8 hours of driving"""
@@ -926,8 +1045,8 @@ class FMCSARules:
                                 'date': entry.get('date', ''),
                                 'type': 'PC_MISUSE_VIOLATION',
                                 'description': f'Misuse of Personal Conveyance (PC) on {entry.get("date", "")}',
-                                'severity': 'major',
-                                'penalty': '$2,750',
+                        'severity': 'major',
+                        'penalty': '$2,750',
                                 'section': '395.2'
                             })
     
