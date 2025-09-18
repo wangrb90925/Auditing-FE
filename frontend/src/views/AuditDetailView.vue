@@ -482,12 +482,38 @@ const loadAudit = async () => {
   }
 };
 
-// Fallback score if backend didn't populate summary.complianceScore
 const computedComplianceScore = computed(() => {
   const raw = audit.value?.summary?.complianceScore;
   if (typeof raw === "number") return raw;
-  const v = audit.value?.violations ?? 0;
-  return v > 0 ? 0 : 100;
+
+  const violations = audit.value?.violationsList || [];
+  if (!Array.isArray(violations) || violations.length === 0) {
+    // If we have no violations data, default to 100
+    return 100;
+  }
+
+  // Softer, proportional penalties with a floor to avoid 0% for a handful of violations
+  let totalPenalty = 0;
+  for (const v of violations) {
+    const type = (v?.type || "").toUpperCase();
+    const severity = (v?.severity || "minor").toLowerCase();
+
+    // Base by severity (softer than backend weights)
+    let base = 4; // minor
+    if (severity === "major") base = 8;
+    if (severity === "critical") base = 12;
+
+    // Type adjustments
+    if (type.includes("HOS")) base += 6;
+    else if (type.includes("FALSIFICATION")) base += 8;
+    else if (type.includes("GEOGRAPHIC")) base += 3;
+    else if (type.includes("FORM") || type.includes("MANNER")) base += 2;
+
+    totalPenalty += base;
+  }
+
+  const score = Math.max(5, 100 - totalPenalty); // 5% floor
+  return Math.round(score * 10) / 10;
 });
 
 const refreshAudit = async () => {

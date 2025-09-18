@@ -1092,8 +1092,30 @@ const formatDate = (dateString) => new Date(dateString).toLocaleDateString();
 const formatScore = (audit) => {
   const raw = audit?.summary?.complianceScore;
   if (typeof raw === "number") return raw;
-  const v = audit?.violations ?? 0;
-  return v > 0 ? 0 : 100;
+
+  const violations = audit?.violationsList || [];
+  if (!Array.isArray(violations) || violations.length === 0) return 100;
+
+  // Softer, proportional penalties with a floor
+  let totalPenalty = 0;
+  for (const v of violations) {
+    const type = (v?.type || "").toUpperCase();
+    const severity = (v?.severity || "minor").toLowerCase();
+
+    let base = 4; // minor
+    if (severity === "major") base = 8;
+    if (severity === "critical") base = 12;
+
+    if (type.includes("HOS")) base += 6;
+    else if (type.includes("FALSIFICATION")) base += 8;
+    else if (type.includes("GEOGRAPHIC")) base += 3;
+    else if (type.includes("FORM") || type.includes("MANNER")) base += 2;
+
+    totalPenalty += base;
+  }
+
+  const score = Math.max(5, 100 - totalPenalty);
+  return Math.round(score * 10) / 10;
 };
 
 const confirmDelete = async (audit) => {
