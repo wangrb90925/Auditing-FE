@@ -180,6 +180,16 @@ class FileProcessor:
         
         # Process the extracted text if we have any content
         if text_content.strip():
+            # Always preserve raw text for downstream heuristic scanning
+            try:
+                self.extracted_data['audit_summaries'].append({
+                    'type': 'raw_text',
+                    'file_name': file_name,
+                    'content': text_content,
+                    'processed_at': datetime.now().isoformat()
+                })
+            except Exception:
+                pass
             # Determine file type based on filename and content
             text_content_lower = text_content.lower()
             
@@ -733,43 +743,12 @@ class FileProcessor:
                             })
                         break
         
-        # If still no entries found, try to extract from the raw text using heuristics
-        if not entries and current_date:
-            # Look for any time patterns in the text
-            time_pattern = r'(\d{1,2}:\d{2})'
-            times_found = re.findall(time_pattern, text_content)
-            
-            if times_found:
-                # Create entries based on found times
-                unique_times = list(set(times_found))[:10]  # Limit to first 10 unique times
-                for i, time_str in enumerate(unique_times):
-                    # Create realistic log entries with violations
-                    if i < 3:
-                        status = 'driving'
-                        location = f'Location {i+1}'
-                    elif i < 5:
-                        status = 'on duty'
-                        location = f'Location {i+1}'
-                    else:
-                        status = 'off duty'
-                        location = f'Location {i+1}'
-                    
-                    entries.append({
-                        'date': current_date,
-                        'time': time_str,
-                        'location': location,
-                        'duty_status': [{
-                            'status': status,
-                            'line': f'{time_str} - {status.upper()} - {location}'
-                        }]
-                    })
+        # Do not fabricate entries from time patterns; prefer raw-text heuristics in rules engine
         
-        # If still no entries OR synthetic logs are enabled, create sample entries with violations for testing
+        # Only create synthetic entries if explicitly enabled for testing
         import os
         allow_synthetic = os.getenv('ALLOW_SYNTHETIC_LOGS', '0') == '1'
-        # For testing purposes, always create synthetic logs if we have a date
-        if current_date:
-            # Create entries that will trigger HOS violations
+        if allow_synthetic and current_date and not entries:
             entries = [
                 {
                     'date': current_date,
