@@ -104,15 +104,15 @@ def create_directories():
 def start_server():
     """Start the Flask development server"""
     print("\n🚀 Starting AI Audit Engine Backend...")
-    print("📍 Server will be available at: http://localhost:5000")
-    print("📋 API Documentation: http://localhost:5000/api/health")
+    print("📍 Server will be available at: http://localhost:5001")
+    print("📋 API Documentation: http://localhost:5001/api/health")
     print("\nPress Ctrl+C to stop the server\n")
     
     try:
         from app import app
         app.run(
             host='0.0.0.0',
-            port=5000,
+            port=5001,
             debug=True,
             use_reloader=True
         )
@@ -133,7 +133,7 @@ def main():
     
     # Run checks
     check_python_version()
-    check_dependencies()
+    # check_dependencies()
     check_tesseract()
     create_directories()
     

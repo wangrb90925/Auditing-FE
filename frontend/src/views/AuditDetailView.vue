@@ -47,6 +47,14 @@
         >
           <Button
             variant="outline"
+            @click="refreshAudit"
+            class="rounded-xl border-green-300 text-green-700 hover:bg-green-50 hover:border-green-400 transition-all duration-300 px-6 py-3"
+          >
+            <RefreshIcon class="w-4 h-4 mr-2" />
+            Refresh Data
+          </Button>
+          <Button
+            variant="outline"
             @click="downloadReport"
             class="rounded-xl border-blue-300 text-blue-700 hover:bg-blue-50 hover:border-blue-400 transition-all duration-300 px-6 py-3"
           >
@@ -130,7 +138,7 @@
                 </svg>
                 <div class="absolute inset-0 flex items-center justify-center">
                   <span class="text-4xl font-bold text-blue-900">
-                    {{ audit.summary?.complianceScore || 0 }}%
+                    {{ computedComplianceScore }}%
                   </span>
                 </div>
               </div>
@@ -419,6 +427,7 @@ import {
   DocumentIcon,
   CheckIcon,
   WarningIcon,
+  RefreshIcon,
 } from "@/assets/icons";
 
 const route = useRoute();
@@ -432,7 +441,7 @@ const error = ref(null);
 // Computed properties for the circular progress
 const circumference = computed(() => 2 * Math.PI * 45);
 const strokeDashoffset = computed(() => {
-  const score = audit.value?.summary?.complianceScore || 0;
+  const score = computedComplianceScore.value;
   return circumference.value - (score / 100) * circumference.value;
 });
 
@@ -452,9 +461,17 @@ const loadAudit = async () => {
     isLoading.value = true;
     error.value = null;
 
+    console.log("🔍 Loading audit with ID:", auditId);
     const result = await auditStore.fetchAudit(auditId);
     if (result.success) {
       audit.value = result.audit;
+      console.log("📊 Audit data loaded:", {
+        id: audit.value.id,
+        driverName: audit.value.driverName,
+        complianceScore: audit.value.summary?.complianceScore,
+        violations: audit.value.violations,
+        violationsList: audit.value.violationsList?.length || 0,
+      });
     } else {
       error.value = result.error || "Failed to load audit";
     }
@@ -463,6 +480,19 @@ const loadAudit = async () => {
   } finally {
     isLoading.value = false;
   }
+};
+
+// Fallback score if backend didn't populate summary.complianceScore
+const computedComplianceScore = computed(() => {
+  const raw = audit.value?.summary?.complianceScore;
+  if (typeof raw === "number") return raw;
+  const v = audit.value?.violations ?? 0;
+  return v > 0 ? 0 : 100;
+});
+
+const refreshAudit = async () => {
+  console.log("🔄 Refreshing audit data...");
+  await loadAudit();
 };
 
 const formatViolationType = (type) => {
