@@ -810,13 +810,11 @@ class FMCSARules:
         return consolidated
     
     def get_violation_summary(self):
-
         """Get summary of violations by category"""
         if not self.violations:
             return {'total': 0, 'by_severity': {}, 'by_type': {}}
         
         summary = {
-
             'total': len(self.violations),
             'by_severity': {},
             'by_type': {}
@@ -1665,6 +1663,134 @@ class FMCSARules:
                         'section': '395.8(d)'
                     })
     
+    def _extract_any_date(self, text):
+        try:
+            # Numeric formats MM/DD(/YY|YYYY) or MM-DD(-YY|YYYY)
+            m = re.search(r'(\b\d{1,2}/\d{1,2}/\d{2,4}\b|\b\d{1,2}-\d{1,2}-\d{2,4}\b|\b\d{1,2}/\d{1,2}\b|\b\d{1,2}-\d{1,2}\b)', text)
+            if m:
+                return m.group(1)
+            # Month name formats (avoid generic words like OFF)
+            month_names = '(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec|January|February|March|April|June|July|August|September|October|November|December)'
+            m = re.search(rf'\b{month_names}\s+\d{{1,2}}\b', text, re.I)
+            if m:
+                return m.group(0)
+        except Exception:
+            return None
+        return None
+
+    def _is_valid_date_string(self, s: str) -> bool:
+        # accept numeric formats or real month names only
+        if re.match(r'^\d{1,2}/\d{1,2}(/\d{2,4})?$', s):
+            return True
+        if re.match(r'^\d{1,2}-\d{1,2}(-\d{2,4})?$', s):
+            return True
+        months = 'Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec|January|February|March|April|June|July|August|September|October|November|December'
+        if re.match(rf'^(?:{months})\s+\d{{1,2}}$', s, re.I):
+            return True
+        return False
+    
+    def _check_break_violations(self, date, driving_sessions):
+        """Check for 30-minute break violations after 8 hours of driving"""
+        for session in driving_sessions:
+            if session['total_hours'] >= 8:  # 8 hours of driving requires 30-minute break
+                # Check if there was a break of at least 30 minutes
+                # This would need to be cross-referenced with off-duty periods
+                # For now, we'll flag if driving session is longer than 8 hours without break
+                if session['total_hours'] > 8.5:  # Allow some buffer
+                    self._add_violation({
+                        'date': date,
+                        'type': 'HOS_BREAK_VIOLATION',
+                        'description': f'30-minute break required after 8 hours driving: {session["total_hours"]:.1f} hours without break',
+                        'severity': 'major',
+                        'penalty': '$2,750',
+                        'section': '395.3(a)(3)'
+                    })
+    
+    def _check_14_hour_window_violation(self, date, first_on_duty_time, entries):
+        """Check for 14-hour window violations"""
+        if not first_on_duty_time or not entries:
+            return
+        
+        # Find the last on-duty or driving time
+        last_on_duty_time = None
+        for entry in reversed(entries):
+            duty_statuses = entry.get('duty_status', [])
+            for status_info in duty_statuses:
+                status = status_info.get('status', '').lower()
+                if status in ['on duty', 'driving']:
+                    last_on_duty_time = entry.get('time', '')
+                    break
+            if last_on_duty_time:
+                break
+        
+        if last_on_duty_time:
+            window_duration = self._calculate_duration(first_on_duty_time, last_on_duty_time)
+            if window_duration > self.hos_rules['max_14_hour_window']:
+                self._add_violation({
+                    'date': date,
+                    'type': 'HOS_14_HOUR_WINDOW_VIOLATION',
+                    'description': f'14-hour window exceeded: {window_duration:.1f} hours from first on-duty time',
+                    'severity': 'major',
+                    'penalty': '$2,750',
+                    'section': '395.3(a)(2)'
+                })
+    
+    def _check_fuel_transaction_compliance(self):
+        """Check fuel transactions against driver logs for compliance"""
+        for fuel_transaction in self.fuel_transactions:
+            fuel_date = fuel_transaction.get('date', '')
+            fuel_time = fuel_transaction.get('time', '')
+            
+            if not fuel_date or not fuel_time:
+                continue
+            
+            # Find corresponding driver log entry
+            found_on_duty_time = False
+            for log_data in self.driver_logs_data:
+                entries = log_data.get('entries', [])
+                for entry in entries:
+                    entry_date = entry.get('date', '')
+                    if entry_date == fuel_date:
+                        duty_statuses = entry.get('duty_status', [])
+                        for status_info in duty_statuses:
+                            status = status_info.get('status', '').lower()
+                            if status in ['on duty', 'driving']:
+                                found_on_duty_time = True
+                                break
+                        if found_on_duty_time:
+                            break
+                if found_on_duty_time:
+                    break
+            
+            if not found_on_duty_time:
+                self._add_violation({
+                    'date': fuel_date,
+                    'type': 'FUEL_WITHOUT_ON_DUTY_TIME',
+                    'description': f'Fuel transaction without corresponding on-duty time on {fuel_date}',
+                    'severity': 'major',
+                    'penalty': '$2,750',
+                    'section': '395.2'
+                })
+    
+    def _check_missing_location_violations(self):
+        """Check for missing location information in driver logs"""
+        for log_data in self.driver_logs_data:
+            entries = log_data.get('entries', [])
+            for entry in entries:
+                date = entry.get('date', '')
+                location = entry.get('location', '')
+                
+                # Check if location is missing or empty
+                if not location or location.strip() == '' or location.lower() in ['', 'n/a', 'none', 'unknown']:
+                    self._add_violation({
+                        'date': date,
+                        'type': 'FORM_MANNER_MISSING_LOCATION',
+                        'description': f'Missing location information in driver log on {date}',
+                        'severity': 'minor',
+                        'penalty': '$1,375',
+                        'section': '395.8(d)'
+                    })
+    
     def _check_pc_misuse_specific(self, date, entries):
         """Check for PC misuse on specific date"""
         if '7/29' in date or '07/29' in date:
@@ -1686,6 +1812,30 @@ class FMCSARules:
                                 'section': '395.8(e)'
                             })
                             break
+    
+    def _check_pc_misuse_violations(self):
+        """Check for Personal Conveyance (PC) misuse violations"""
+        for log_data in self.driver_logs_data:
+            entries = log_data.get('entries', [])
+            for entry in entries:
+                duty_statuses = entry.get('duty_status', [])
+                for status_info in duty_statuses:
+                    status = status_info.get('status', '').lower()
+                    remarks = status_info.get('remarks', '').lower()
+                    
+                    # Check for PC misuse patterns
+                    if 'pc' in remarks or 'personal conveyance' in remarks:
+                        # Check if PC is being used inappropriately
+                        if 'driving' in status and 'pc' in remarks:
+                            # PC should not be used while driving for commercial purposes
+                            self._add_violation({
+                                'date': entry.get('date', ''),
+                                'type': 'PC_MISUSE_VIOLATION',
+                                'description': f'Misuse of Personal Conveyance (PC) on {entry.get("date", "")}',
+                                'severity': 'major',
+                                'penalty': '$2,750',
+                                'section': '395.2'
+                            })
     
     def _check_14_hour_window_specific(self, date, entries):
         """Check for 14-hour window violation on specific date"""
