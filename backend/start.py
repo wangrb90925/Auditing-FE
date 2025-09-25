@@ -55,6 +55,9 @@ def check_tesseract():
     """Check if Tesseract OCR is available"""
     try:
         import pytesseract
+        # Configure pytesseract to use the correct Tesseract executable path on Windows
+        if os.name == 'nt':  # Windows
+            pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
         pytesseract.get_tesseract_version()
         print("✅ Tesseract OCR is available")
     except Exception as e:

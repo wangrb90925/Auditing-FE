@@ -9,6 +9,11 @@ import numpy as np
 from datetime import datetime, timedelta
 import re
 import json
+from openai_service import OpenAIService
+
+# Configure pytesseract to use the correct Tesseract executable path on Windows
+if os.name == 'nt':  # Windows
+    pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
 
 class FileProcessor:
     def __init__(self, suppress_font_warnings=True):
@@ -20,6 +25,7 @@ class FileProcessor:
             'weekly_summaries': []  # Added weekly_summaries
         }
         self.suppress_font_warnings = suppress_font_warnings
+        self.openai_service = OpenAIService()  # Initialize OpenAI service
         self.processing_stats = {
             'total_files': 0,
             'successful_extractions': 0,
@@ -196,8 +202,19 @@ class FileProcessor:
             # Check for driver log indicators in filename or content
             if ('log' in file_name.lower() or 'eld' in file_name.lower() or 
                 'driver' in text_content_lower or 'duty status' in text_content_lower or
-                'hours of service' in text_content_lower or 'daily log' in text_content_lower):
-                self._extract_driver_log_data(text_content, file_name)
+                'hours of service' in text_content_lower or 'daily log' in text_content_lower or
+                'rods' in file_name.lower()):
+                # Always use fallback extraction first to ensure complete date range
+                print(f"📝 Using fallback extraction for complete date range: {file_name}")
+                self._extract_driver_log_data_with_fallback(text_content, file_name)
+                
+                # Then enhance with AI if available
+                if self.openai_service.is_available():
+                    print(f"🤖 Enhancing with AI-powered extraction: {file_name}")
+                    self._extract_driver_log_data_with_ai(text_content, file_name)
+                else:
+                    print(f"📝 Using traditional extraction for RODS file: {file_name}")
+                    self._extract_driver_log_data(text_content, file_name)
             elif 'bol' in file_name.lower() or 'lading' in file_name.lower():
                 self._extract_bol_data(text_content, file_name)
             elif 'fuel' in file_name.lower() or 'receipt' in file_name.lower():
@@ -797,6 +814,151 @@ class FileProcessor:
             print(f"✅ Extracted {len(entries)} driver log entries from {file_name}")
         else:
             print(f"⚠️  No driver log entries extracted from {file_name}")
+    
+    def _extract_driver_log_data_with_fallback(self, text_content, file_name):
+        """Extract driver log data using fallback method to ensure complete date range"""
+        try:
+            print(f"📝 Processing RODS file with fallback extraction: {file_name}")
+            
+            # Use OpenAI service fallback extraction to get complete date range
+            fallback_result = self.openai_service._fallback_extraction(text_content, file_name)
+            
+            if fallback_result and fallback_result.get('extraction_method') == 'fallback':
+                # Convert fallback result to our expected format
+                entries = []
+                daily_entries = fallback_result.get('daily_entries', [])
+                
+                for day_entry in daily_entries:
+                    date = day_entry.get('date', '2024-01-01')
+                    day_entries_list = day_entry.get('entries', [])
+                    for entry in day_entries_list:
+                        entries.append({
+                            'date': date,
+                            'time': entry.get('time', '00:00'),
+                            'location': entry.get('location', 'Unknown'),
+                            'duty_status': [{
+                                'status': entry.get('duty_status', 'unknown'),
+                                'line': f"{entry.get('time', '00:00')} - {entry.get('duty_status', 'unknown')} - {entry.get('location', 'Unknown')}"
+                            }]
+                        })
+                
+                driver_info = {
+                    'driver_name': fallback_result.get('driver_name', 'Unknown'),
+                    'driver_id': fallback_result.get('driver_id', ''),
+                    'carrier_name': fallback_result.get('carrier_name', ''),
+                    'log_period': {
+                        'start_date': fallback_result.get('start_date', ''),
+                        'end_date': fallback_result.get('end_date', '')
+                    },
+                    'summary': {
+                        'total_driving_hours': fallback_result.get('total_driving_hours', 0),
+                        'total_on_duty_hours': fallback_result.get('total_on_duty_hours', 0),
+                        'total_off_duty_hours': fallback_result.get('total_off_duty_hours', 0),
+                        'total_miles': fallback_result.get('total_miles', 0)
+                    },
+                    'ai_detected_violations': fallback_result.get('violations', []),
+                    'violation_types': fallback_result.get('violation_types', [])
+                }
+                
+                # Store the fallback data
+                self.extracted_data['driver_logs'].append({
+                    'type': 'driver_log',
+                    'file_name': file_name,
+                    'entries': entries,
+                    'ai_enhanced': False,
+                    'driver_info': driver_info,
+                    'extraction_method': 'fallback',
+                    'extracted_at': fallback_result.get('extracted_at', datetime.now().isoformat())
+                })
+                
+                print(f"✅ Fallback extracted {len(entries)} driver log entries from {file_name}")
+                print(f"📊 Driver: {driver_info['driver_name']}, Period: {driver_info['log_period']['start_date']} to {driver_info['log_period']['end_date']}")
+                
+            else:
+                print(f"⚠️  Fallback extraction failed for {file_name}")
+                
+        except Exception as e:
+            print(f"❌ Fallback extraction error for {file_name}: {str(e)}")
+    
+    def _extract_driver_log_data_with_ai(self, text_content, file_name):
+        """Extract driver log data using OpenAI for enhanced accuracy"""
+        try:
+            print(f"🤖 Processing RODS file with AI: {file_name}")
+            
+            # Use OpenAI service to extract structured data
+            ai_result = self.openai_service.extract_rods_data(text_content, file_name)
+            
+            if ai_result and ai_result.get('extraction_method') == 'openai':
+                # Convert AI result to our expected format
+                entries = []
+                
+                # Process daily entries from AI result
+                daily_entries = ai_result.get('daily_entries', [])
+                for day_entry in daily_entries:
+                    date = day_entry.get('date', '2024-01-01')
+                    day_entries = day_entry.get('entries', [])
+                    
+                    for entry in day_entries:
+                        entries.append({
+                            'date': date,
+                            'time': entry.get('time', '00:00'),
+                            'location': entry.get('location', 'Unknown'),
+                            'duty_status': [{
+                                'status': entry.get('duty_status', 'unknown'),
+                                'line': f"{entry.get('time', '00:00')} - {entry.get('duty_status', 'unknown')} - {entry.get('location', 'Unknown')}"
+                            }]
+                        })
+                
+                # Add driver information
+                driver_info = {
+                    'driver_name': ai_result.get('driver_name', 'Unknown'),
+                    'driver_id': ai_result.get('driver_id', ''),
+                    'carrier_name': ai_result.get('carrier_name', ''),
+                    'log_period': {
+                        'start_date': ai_result.get('start_date', ''),
+                        'end_date': ai_result.get('end_date', '')
+                    },
+                    'summary': {
+                        'total_driving_hours': ai_result.get('total_driving_hours', 0),
+                        'total_on_duty_hours': ai_result.get('total_on_duty_hours', 0),
+                        'total_off_duty_hours': ai_result.get('total_off_duty_hours', 0),
+                        'total_miles': ai_result.get('total_miles', 0)
+                    },
+                    'ai_detected_violations': ai_result.get('violations', []),
+                    'violation_types': ai_result.get('violation_types', [])
+                }
+                
+                # Store the enhanced data
+                self.extracted_data['driver_logs'].append({
+                    'type': 'driver_log',
+                    'file_name': file_name,
+                    'entries': entries,
+                    'ai_enhanced': True,
+                    'driver_info': driver_info,
+                    'extraction_method': 'openai',
+                    'extracted_at': ai_result.get('extracted_at', datetime.now().isoformat())
+                })
+                
+                print(f"✅ AI extracted {len(entries)} driver log entries from {file_name}")
+                print(f"📊 Driver: {driver_info['driver_name']}, Period: {driver_info['log_period']['start_date']} to {driver_info['log_period']['end_date']}")
+                
+                # Also store raw AI result for detailed analysis
+                self.extracted_data['audit_summaries'].append({
+                    'type': 'ai_rods_analysis',
+                    'file_name': file_name,
+                    'content': ai_result,
+                    'processed_at': datetime.now().isoformat()
+                })
+                
+            else:
+                # Fallback to traditional extraction if AI fails
+                print(f"⚠️  AI extraction failed for {file_name}, falling back to traditional method")
+                self._extract_driver_log_data(text_content, file_name)
+                
+        except Exception as e:
+            print(f"❌ AI extraction error for {file_name}: {str(e)}")
+            # Fallback to traditional extraction
+            self._extract_driver_log_data(text_content, file_name)
     
     def _extract_driver_log_from_excel(self, df, file_name):
         """Extract driver log data from Excel DataFrame"""
