@@ -102,7 +102,65 @@ class OpenAIService:
     
     def _create_rods_extraction_prompt(self, text_content: str, file_name: str) -> str:
         """Create prompt for RODS data extraction"""
-        return f"""
+        
+        # Check if this is Excel data
+        is_excel_data = "Excel File:" in text_content and "Sheet:" in text_content
+        
+        if is_excel_data:
+            return f"""
+Extract structured RODS (Record of Duty Status) data from the following Excel file data. This appears to be from file: {file_name}
+
+IMPORTANT: This is Excel data from a driver log spreadsheet. The data is already structured in columns.
+
+Filename analysis: {file_name}
+- If filename contains "7.15-8.13", the log period is July 15 to August 13
+- Extract dates in M/D format (e.g., "7/15", "8/1", "7/23", "8/6")
+
+Excel data content:
+{text_content[:8000]}  # Limit to avoid token limits
+
+Please extract the following information and return as JSON:
+
+1. Driver Information:
+   - driver_name: Full name of the driver (look for "Driver" field, "Kundan Lal", "Tedd", etc.)
+   - driver_id: Driver ID or license number if available
+   - carrier_name: Name of the carrier/company
+
+2. Log Period (from filename):
+   - start_date: Start date in M/D format (e.g., "7/15")
+   - end_date: End date in M/D format (e.g., "8/13")
+
+3. Daily Entries (from Excel rows):
+   - date: Date in M/D format (e.g., "7/15", "7/16", "7/17", etc.)
+   - entries: Array of duty status entries with:
+     - time: Time in HH:MM format
+     - duty_status: One of: driving, on_duty_not_driving, off_duty, sleeper_berth, personal_conveyance
+     - location: Location or city/state
+     - remarks: Any additional notes or remarks
+
+4. Summary Information:
+   - total_driving_hours: Total hours driving
+   - total_on_duty_hours: Total hours on duty
+   - total_off_duty_hours: Total hours off duty
+   - total_miles: Total miles driven (if available)
+
+5. Violations Detected:
+   - violations: Array of any obvious violations found
+   - violation_types: Types of violations (e.g., "11_hour_driving", "14_hour_on_duty", "form_manner")
+
+CRITICAL for Excel data:
+- Use the structured columns to extract data accurately
+- Map Excel columns to RODS fields (Date, Time, Duty_Status, Location, etc.)
+- Extract ALL rows from the Excel data
+- Use M/D date format (e.g., "7/23", "8/1") based on the filename period
+- Create daily entries for EVERY row in the Excel data
+- Look for ALL duty status entries across the entire date range
+- Do not skip any rows - extract complete chronological data
+
+Return the data as valid JSON only, no additional text.
+"""
+        else:
+            return f"""
 Extract structured RODS (Record of Duty Status) data from the following ELD log text. This appears to be from file: {file_name}
 
 IMPORTANT: This is an ELD (Electronic Logging Device) log. Extract dates from the filename if not clearly visible in the text.

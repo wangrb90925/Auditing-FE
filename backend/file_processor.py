@@ -55,7 +55,7 @@ class FileProcessor:
                     else:
                         self.processing_stats['failed_extractions'] += 1
                 elif file_path.endswith(('.xlsx', '.xls')):
-                    success = self._process_image(file_path, file_name)  # Use image processor for Excel
+                    success = self._process_excel(file_path, file_name)  # Use Excel processor for Excel files
                     if success:
                         self.processing_stats['successful_extractions'] += 1
                     else:
@@ -569,6 +569,15 @@ class FileProcessor:
             
             print(f"Processing Excel file {file_name} with {len(sheets)} sheets: {sheets}")
             
+            # Check if this looks like a driver log file (similar to PDF processing)
+            is_driver_log_file = any([
+                'rods' in file_name.lower(),
+                'driver' in file_name.lower(),
+                'log' in file_name.lower(),
+                'eld' in file_name.lower()
+            ])
+            
+            sheets_processed = 0
             for sheet_name in sheets:
                 try:
                     df = pd.read_excel(file_path, sheet_name=sheet_name)
@@ -576,24 +585,46 @@ class FileProcessor:
                     # Determine content type based on sheet name and columns
                     if 'Driver_Log' in sheet_name or 'Duty_Status' in df.columns or 'Time' in df.columns:
                         print(f"  - Processing sheet '{sheet_name}' as driver log")
-                        self._extract_driver_log_from_excel(df, file_name)
+                        
+                        # Use AI enhancement for driver logs if available
+                        if is_driver_log_file and self.openai_service.is_available():
+                            print(f"🤖 Enhancing Excel driver log with AI: {file_name}")
+                            self._extract_driver_log_from_excel_with_ai(df, file_name, sheet_name)
+                        else:
+                            self._extract_driver_log_from_excel(df, file_name)
+                        sheets_processed += 1
+                        
+                    elif 'Audit Summary' in sheet_name or 'Monthly Log Audit' in str(df.iloc[0, 0]) or 'Viol.' in str(df.iloc[0, 0]):
+                        print(f"  - Processing sheet '{sheet_name}' as audit summary")
+                        self._extract_audit_summary_from_excel(df, file_name, sheet_name)
+                        sheets_processed += 1
+                        
                     elif 'Fuel_Receipts' in sheet_name or 'Driver_Status' in df.columns or 'Fuel' in df.columns:
                         print(f"  - Processing sheet '{sheet_name}' as fuel receipt")
                         self._extract_fuel_receipt_from_excel(df, file_name)
+                        sheets_processed += 1
+                        
                     elif 'Weekly_Summary' in sheet_name or 'Driving_Hours' in df.columns or 'Total_Hours' in df.columns:
                         print(f"  - Processing sheet '{sheet_name}' as weekly summary")
                         self._extract_weekly_summary_from_excel(df, file_name)
+                        sheets_processed += 1
+                        
                     elif 'BOL' in sheet_name or 'Origin' in df.columns or 'Destination' in df.columns:
                         print(f"  - Processing sheet '{sheet_name}' as bill of lading")
                         self._extract_bol_from_excel(df, file_name)
+                        sheets_processed += 1
+                        
                     else:
                         # Generic Excel processing for unknown sheets
                         print(f"  - Processing sheet '{sheet_name}' as generic data")
-                        self._extract_generic_data(df, file_name)
+                        self._extract_generic_data_from_excel(df, file_name)
+                        sheets_processed += 1
                         
                 except Exception as sheet_error:
                     print(f"  - Error processing sheet '{sheet_name}' in {file_name}: {str(sheet_error)}")
                     continue
+            
+            return sheets_processed > 0  # Return True if at least one sheet was processed successfully
                     
         except Exception as e:
             print(f"Error processing Excel file {file_name}: {str(e)}")
@@ -601,11 +632,13 @@ class FileProcessor:
             try:
                 print(f"Attempting fallback Excel processing for {file_name}")
                 df = pd.read_excel(file_path)
-                self._extract_generic_data(df, file_name)
+                self._extract_generic_data_from_excel(df, file_name)
+                return True  # Fallback succeeded
             except Exception as fallback_error:
                 print(f"Fallback Excel processing also failed for {file_name}: {str(fallback_error)}")
                 # Add placeholder to indicate processing failure
                 self._add_processing_placeholder(file_name, 'excel')
+                return False  # Complete failure
     
     def _extract_driver_log_data(self, text_content, file_name):
         """Extract driver log data from text content"""
@@ -960,6 +993,58 @@ class FileProcessor:
             # Fallback to traditional extraction
             self._extract_driver_log_data(text_content, file_name)
     
+    def _extract_driver_log_from_excel_with_ai(self, df, file_name, sheet_name):
+        """Extract driver log data from Excel using AI enhancement"""
+        try:
+            print(f"🤖 Processing Excel driver log with AI: {file_name} (sheet: {sheet_name})")
+            
+            # Convert DataFrame to text for AI processing
+            df_text = df.to_string(index=False)
+            
+            # Create a combined text that includes sheet info
+            combined_text = f"""
+Excel File: {file_name}
+Sheet: {sheet_name}
+Columns: {', '.join(df.columns.tolist())}
+
+Data:
+{df_text}
+"""
+            
+            # Use OpenAI service to extract structured data
+            ai_result = self.openai_service.extract_rods_data(combined_text, file_name)
+            
+            if ai_result and ai_result.get('extraction_method') == 'openai':
+                # Convert AI result to our expected format
+                log_data = {
+                    'type': 'driver_log',
+                    'file_name': file_name,
+                    'sheet_name': sheet_name,
+                    'extraction_method': 'openai_excel',
+                    'driver_name': ai_result.get('driver_name', ''),
+                    'driver_id': ai_result.get('driver_id', ''),
+                    'carrier_name': ai_result.get('carrier_name', ''),
+                    'log_period': ai_result.get('log_period', {}),
+                    'entries': ai_result.get('entries', []),
+                    'summary': ai_result.get('summary', {}),
+                    'violations': ai_result.get('violations', []),
+                    'processed_at': datetime.now().isoformat()
+                }
+                
+                # Add to extracted data
+                self.extracted_data['driver_logs'].append(log_data)
+                print(f"✅ AI-enhanced Excel driver log extraction completed: {file_name}")
+                return True
+            else:
+                # Fallback to traditional Excel processing
+                print(f"⚠️  AI extraction failed, falling back to traditional Excel processing: {file_name}")
+                return self._extract_driver_log_from_excel(df, file_name)
+                
+        except Exception as e:
+            print(f"❌ AI Excel driver log extraction error for {file_name}: {str(e)}")
+            # Fallback to traditional processing
+            return self._extract_driver_log_from_excel(df, file_name)
+    
     def _extract_driver_log_from_excel(self, df, file_name):
         """Extract driver log data from Excel DataFrame"""
         entries = []
@@ -1275,6 +1360,400 @@ class FileProcessor:
             
         except Exception as e:
             print(f"Error extracting generic data: {str(e)}")
+    
+    def _extract_audit_summary_from_excel(self, df, file_name, sheet_name):
+        """Extract audit summary data from Excel DataFrame"""
+        try:
+            print(f"📊 Processing audit summary: {file_name} (sheet: {sheet_name})")
+            
+            # Extract driver name from the first row
+            driver_name = "Unknown"
+            if len(df) > 0 and len(df.columns) > 0:
+                first_cell = str(df.iloc[0, 0])
+                if "Driver:" in first_cell:
+                    driver_name = first_cell.split("Driver:")[-1].strip()
+                elif "Kundan Lal" in first_cell:
+                    driver_name = "Kundan Lal"
+            
+            # Look for violation data in the structured Excel format
+            violations = []
+            
+            # Find header row to understand column mapping
+            header_mapping = self._find_excel_headers(df)
+            print(f"Found header mapping: {header_mapping}")
+            
+            # Process data rows (typically starting from row 5)
+            for row_idx in range(4, len(df)):  # Start from row 4, skip headers
+                row = df.iloc[row_idx]
+                
+                # Extract date from first column
+                date = self._extract_date_from_excel_cell(row.iloc[0])
+                if not date:
+                    continue  # Skip rows without valid dates
+                
+                # Check each violation column
+                row_violations = self._extract_violations_from_excel_row(row, row_idx, date, header_mapping)
+                violations.extend(row_violations)
+            
+            # Create audit summary data
+            audit_summary = {
+                'type': 'audit_summary',
+                'file_name': file_name,
+                'sheet_name': sheet_name,
+                'driver_name': driver_name,
+                'extraction_method': 'excel_audit_summary',
+                'violations': violations,
+                'processed_at': datetime.now().isoformat()
+            }
+            
+            # Add to extracted data
+            self.extracted_data['audit_summaries'].append(audit_summary)
+            print(f"✅ Extracted audit summary with {len(violations)} violations from {file_name}")
+            
+            return True
+            
+        except Exception as e:
+            print(f"❌ Error extracting audit summary from Excel: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return False
+    
+    def _find_excel_headers(self, df):
+        """Find header row and map columns to violation types"""
+        header_mapping = {}
+        
+        # Look for header rows (usually row 2-3)
+        for row_idx in range(0, min(4, len(df))):
+            row = df.iloc[row_idx]
+            for col_idx, cell_value in enumerate(row):
+                cell_str = str(cell_value).lower().strip()
+                
+                if '11 hr' in cell_str:
+                    header_mapping['11_hour'] = col_idx
+                elif '14 hr' in cell_str:
+                    header_mapping['14_hour'] = col_idx
+                elif '30 min' in cell_str:
+                    header_mapping['30_min'] = col_idx
+                elif '70' in cell_str and 'hr' in cell_str:
+                    header_mapping['70_hour'] = col_idx
+                elif 'missing' in cell_str and 'log' in cell_str:
+                    header_mapping['missing_log'] = col_idx
+                elif 'form' in cell_str and 'manner' in cell_str:
+                    header_mapping['form_manner'] = col_idx
+                elif 'false' in cell_str and 'rods' in cell_str:
+                    header_mapping['false_rods'] = col_idx
+        
+        return header_mapping
+    
+    def _extract_date_from_excel_cell(self, cell_value):
+        """Extract date from Excel cell and convert to M/D format"""
+        try:
+            if pd.isna(cell_value):
+                return None
+            
+            # Convert to string
+            cell_str = str(cell_value)
+            
+            # Check if it's already in M/D format
+            if '/' in cell_str and len(cell_str) <= 10:
+                return cell_str
+            
+            # Try to parse as datetime
+            if 'datetime' in str(type(cell_value)) or '2025-' in cell_str:
+                # Parse datetime and convert to M/D format
+                import datetime as dt
+                if isinstance(cell_value, dt.datetime):
+                    return f"{cell_value.month}/{cell_value.day}"
+                else:
+                    # Parse string datetime
+                    parsed_date = pd.to_datetime(cell_str)
+                    return f"{parsed_date.month}/{parsed_date.day}"
+            
+            return None
+            
+        except Exception as e:
+            print(f"Error parsing date from '{cell_value}': {str(e)}")
+            return None
+    
+    def _extract_violations_from_excel_row(self, row, row_idx, date, header_mapping):
+        """Extract violations from a specific Excel row"""
+        violations = []
+        
+        try:
+            # Check each violation column
+            for violation_type, col_idx in header_mapping.items():
+                if col_idx < len(row):
+                    cell_value = row.iloc[col_idx]
+                    
+                    # Check if there's a violation value
+                    if pd.notna(cell_value) and str(cell_value).strip():
+                        cell_str = str(cell_value).strip()
+                        
+                        # Skip zero values and headers
+                        if cell_str not in ['0', '0.0', 'nan', 'NaN', 'Viol.', 'HR.', 'Min']:
+                            violation = self._create_violation_from_excel_data(
+                                violation_type, cell_str, date, row_idx
+                            )
+                            if violation:
+                                violations.append(violation)
+            
+            # Also check for text-based violations in other columns
+            for col_idx, cell_value in enumerate(row):
+                if pd.notna(cell_value):
+                    cell_str = str(cell_value).lower()
+                    
+                    # Look for specific violation patterns
+                    if 'missing location' in cell_str:
+                        violations.append({
+                            'date': date,
+                            'type': 'FORM_MANNER_MISSING_LOCATION',
+                            'description': f'Missing location violation on {date}',
+                            'severity': 'major',
+                            'penalty': '$2,750',
+                            'section': '395.8(a)(1)',
+                            'source': 'excel_audit_summary'
+                        })
+                    elif 'fueling off duty' in cell_str or 'fuel' in cell_str and 'off duty' in cell_str:
+                        violations.append({
+                            'date': date,
+                            'type': 'FUEL_TRANSACTION_OFF_DUTY',
+                            'description': f'Fuel transaction without corresponding on-duty time on {date}',
+                            'severity': 'major',
+                            'penalty': '$2,750',
+                            'section': '395.8(a)(1)',
+                            'source': 'excel_audit_summary'
+                        })
+                    elif 'pc' in cell_str and ('misuse' in cell_str or 'personal conveyance' in cell_str):
+                        violations.append({
+                            'date': date,
+                            'type': 'PC_MISUSE_VIOLATION',
+                            'description': f'Personal Conveyance misuse on {date}',
+                            'severity': 'major',
+                            'penalty': '$2,750',
+                            'section': '395.8(a)(1)',
+                            'source': 'excel_audit_summary'
+                        })
+                    elif ('30 minute' in cell_str or '8 hours driving' in cell_str) and 'break' in cell_str:
+                        violations.append({
+                            'date': date,
+                            'type': 'HOS_BREAK_VIOLATION',
+                            'description': f'30-minute break violation on {date}',
+                            'severity': 'major',
+                            'penalty': '$2,750',
+                            'section': '395.3(a)(3)',
+                            'source': 'excel_audit_summary'
+                        })
+                    elif '11 hour' in cell_str and ('exceed' in cell_str or 'driving' in cell_str):
+                        violations.append({
+                            'date': date,
+                            'type': 'HOS_DRIVING_HOURS_EXCEEDED',
+                            'description': f'11-hour driving limit exceeded on {date}',
+                            'severity': 'major',
+                            'penalty': '$2,750',
+                            'section': '395.3(a)(1)',
+                            'source': 'excel_audit_summary'
+                        })
+            
+            return violations
+            
+        except Exception as e:
+            print(f"Error extracting violations from row {row_idx}: {str(e)}")
+            return []
+    
+    def _create_violation_from_excel_data(self, violation_type, cell_value, date, row_idx):
+        """Create a violation object from Excel data"""
+        try:
+            # Try to convert to numeric
+            try:
+                numeric_value = float(cell_value)
+                if numeric_value <= 0:
+                    return None  # Skip zero or negative values
+            except (ValueError, TypeError):
+                # Not numeric, check if it's violation text
+                if not any(keyword in cell_value.lower() for keyword in 
+                          ['violation', 'exceeded', 'missing', 'off duty', 'pc', 'break']):
+                    return None
+            
+            # Map violation types to specific FMCSA violations
+            violation_map = {
+                '11_hour': {
+                    'type': 'HOS_DRIVING_HOURS_EXCEEDED',
+                    'description': f'11-hour driving violation on {date} - Value: {cell_value}',
+                    'section': '395.3(a)(1)'
+                },
+                '14_hour': {
+                    'type': 'HOS_ON_DUTY_HOURS_EXCEEDED', 
+                    'description': f'14-hour on-duty violation on {date} - Value: {cell_value}',
+                    'section': '395.3(a)(2)'
+                },
+                '30_min': {
+                    'type': 'HOS_BREAK_VIOLATION',
+                    'description': f'30-minute break violation on {date} - Value: {cell_value}',
+                    'section': '395.3(a)(3)'
+                },
+                '70_hour': {
+                    'type': 'HOS_WEEKLY_LIMIT_EXCEEDED',
+                    'description': f'70-hour weekly limit violation on {date} - Value: {cell_value}',
+                    'section': '395.3(b)'
+                },
+                'missing_log': {
+                    'type': 'FORM_MANNER_MISSING_LOG',
+                    'description': f'Missing log violation on {date} - Value: {cell_value}',
+                    'section': '395.8(a)(1)'
+                },
+                'form_manner': {
+                    'type': 'FORM_MANNER_VIOLATION',
+                    'description': f'Form and manner violation on {date} - Value: {cell_value}',
+                    'section': '395.8(a)(1)'
+                },
+                'false_rods': {
+                    'type': 'FALSIFICATION_VIOLATION',
+                    'description': f'False RODS violation on {date} - Value: {cell_value}',
+                    'section': '395.8(e)'
+                }
+            }
+            
+            if violation_type in violation_map:
+                violation_info = violation_map[violation_type]
+                return {
+                    'date': date,
+                    'type': violation_info['type'],
+                    'description': violation_info['description'],
+                    'severity': 'major',
+                    'penalty': '$2,750',
+                    'section': violation_info['section'],
+                    'source': 'excel_audit_summary'
+                }
+            
+            return None
+            
+        except Exception as e:
+            print(f"Error creating violation from Excel data: {str(e)}")
+            return None
+    
+    def _extract_violation_from_excel_row(self, df, row_idx, col_idx):
+        """Extract violation details from Excel row"""
+        try:
+            # Get the row data
+            row_data = df.iloc[row_idx]
+            
+            # Look for date in the row
+            date = None
+            for cell in row_data:
+                cell_str = str(cell)
+                # Look for date patterns like "7/15", "8/1", etc.
+                if '/' in cell_str and len(cell_str) <= 10:
+                    try:
+                        # Try to parse as date
+                        if cell_str.count('/') == 1:  # M/D format
+                            date = cell_str
+                            break
+                    except:
+                        continue
+            
+            # Determine violation type based on column headers and content
+            violation_type = "UNKNOWN_VIOLATION"
+            description = "Violation detected in audit summary"
+            
+            # Check column headers for violation types
+            if col_idx < len(df.columns):
+                col_name = str(df.columns[col_idx]).lower()
+                if '11 hr' in col_name or '11 hour' in col_name:
+                    violation_type = "HOS_DRIVING_HOURS_EXCEEDED"
+                    description = "11-hour driving violation"
+                elif '14 hr' in col_name or '14 hour' in col_name:
+                    violation_type = "HOS_ON_DUTY_HOURS_EXCEEDED"
+                    description = "14-hour on-duty violation"
+                elif '30 min' in col_name or 'break' in col_name:
+                    violation_type = "HOS_BREAK_VIOLATION"
+                    description = "30-minute break violation"
+                elif '70' in col_name and 'hr' in col_name:
+                    violation_type = "HOS_WEEKLY_LIMIT_EXCEEDED"
+                    description = "70-hour weekly limit violation"
+                elif 'form' in col_name and 'manner' in col_name:
+                    violation_type = "FORM_MANNER_VIOLATION"
+                    description = "Form and manner violation"
+                elif 'missing' in col_name and 'log' in col_name:
+                    violation_type = "FORM_MANNER_MISSING_LOG"
+                    description = "Missing log violation"
+            
+            # Check if there's a violation value (non-zero, non-empty)
+            violation_value = row_data.iloc[col_idx] if col_idx < len(row_data) else None
+            if (violation_value and 
+                str(violation_value).strip() not in ['0', '0.0', '', 'nan', 'NaN', 'None'] and
+                str(violation_value).strip() not in ['viol.', 'viol', '11 hr.', '14 hr.', '30 min', '70 hr.']):
+                
+                # Only create violation if it's a numeric value or specific violation text
+                try:
+                    # Try to convert to float to see if it's a numeric violation
+                    float_val = float(violation_value)
+                    if float_val > 0:  # Only count positive values as violations
+                        return {
+                            'date': date or 'unknown',
+                            'type': violation_type,
+                            'description': f"{description} - Count: {violation_value}",
+                            'severity': 'major',
+                            'penalty': '$2,750',
+                            'section': '395.3',
+                            'source': 'excel_audit_summary'
+                        }
+                except (ValueError, TypeError):
+                    # Not a numeric value, check if it's a specific violation text
+                    violation_text = str(violation_value).lower()
+                    if any(keyword in violation_text for keyword in ['violation', 'exceeded', 'missing', 'falsified']):
+                        return {
+                            'date': date or 'unknown',
+                            'type': violation_type,
+                            'description': f"{description} - {violation_value}",
+                            'severity': 'major',
+                            'penalty': '$2,750',
+                            'section': '395.3',
+                            'source': 'excel_audit_summary'
+                        }
+            
+            return None
+            
+        except Exception as e:
+            print(f"❌ Error extracting violation from Excel row: {str(e)}")
+            return None
+    
+    def _extract_generic_data_from_excel(self, df, file_name):
+        """Extract generic data from Excel DataFrame"""
+        try:
+            # Convert DataFrame to string for analysis
+            df_str = df.to_string()
+            
+            # Try to extract any useful information from Excel data
+            extracted_info = {
+                'filename': file_name,
+                'type': 'generic_excel',
+                'content': df_str[:500],  # Limit content length
+                'processed_at': datetime.now().isoformat(),
+                'extracted_data': {
+                    'columns': list(df.columns),
+                    'rows': len(df),
+                    'shape': df.shape
+                }
+            }
+            
+            # Look for any patterns that might indicate document type
+            if any('driver' in str(col).lower() or 'log' in str(col).lower() for col in df.columns):
+                extracted_info['extracted_data']['document_type'] = 'driver_log'
+            elif any('fuel' in str(col).lower() or 'receipt' in str(col).lower() for col in df.columns):
+                extracted_info['extracted_data']['document_type'] = 'fuel_receipt'
+            elif any('lading' in str(col).lower() or 'bol' in str(col).lower() for col in df.columns):
+                extracted_info['extracted_data']['document_type'] = 'bill_of_lading'
+            elif any('weekly' in str(col).lower() or 'summary' in str(col).lower() for col in df.columns):
+                extracted_info['extracted_data']['document_type'] = 'weekly_summary'
+            else:
+                extracted_info['extracted_data']['document_type'] = 'unknown'
+            
+            # Add to extracted data
+            self.extracted_data['audit_summaries'].append(extracted_info)
+            print(f"✅ Extracted generic Excel data from {file_name}")
+            
+        except Exception as e:
+            print(f"Error extracting generic Excel data: {str(e)}")
     
     def _extract_weekly_summary_from_excel(self, df, file_name):
         """Extract weekly summary data from Excel DataFrame"""

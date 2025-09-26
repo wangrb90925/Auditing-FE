@@ -101,6 +101,12 @@ class FMCSARules:
         for summary_data in weekly_summaries:
             self._check_weekly_summary_compliance(summary_data)
         
+        # Process audit summaries
+        audit_summaries = extracted_data.get('audit_summaries', [])
+        for summary_data in audit_summaries:
+            if summary_data.get('type') == 'audit_summary':
+                self._check_audit_summary_compliance(summary_data)
+        
         # Cross-reference fuel transactions with driver logs
         self._check_fuel_transaction_compliance()
         
@@ -1099,6 +1105,46 @@ class FMCSARules:
                             'penalty': '$2,750',
                             'section': '395.8(d)'
                         })
+    
+    def _check_audit_summary_compliance(self, summary_data):
+        """Check compliance based on audit summary data"""
+        try:
+            violations = summary_data.get('violations', [])
+            driver_name = summary_data.get('driver_name', 'Unknown')
+            file_name = summary_data.get('file_name', 'Unknown')
+            
+            print(f"📊 Processing audit summary for {driver_name} from {file_name}")
+            print(f"Found {len(violations)} violations in audit summary")
+            
+            # Add violations from audit summary to our violations list
+            for violation in violations:
+                # Convert audit summary violation to our format
+                formatted_violation = {
+                    'date': violation.get('date', 'unknown'),
+                    'type': violation.get('type', 'UNKNOWN_VIOLATION'),
+                    'description': violation.get('description', 'Violation from audit summary'),
+                    'severity': violation.get('severity', 'major'),
+                    'penalty': violation.get('penalty', '$2,750'),
+                    'section': violation.get('section', '395.3'),
+                    'source': 'audit_summary'
+                }
+                
+                self._add_violation(formatted_violation)
+            
+            # If no violations found in audit summary, add a note
+            if not violations:
+                self._add_violation({
+                    'date': 'unknown',
+                    'type': 'AUDIT_SUMMARY_NO_VIOLATIONS',
+                    'description': f'Audit summary for {driver_name} shows no violations',
+                    'severity': 'minor',
+                    'penalty': '$0',
+                    'section': '395.8',
+                    'source': 'audit_summary'
+                })
+            
+        except Exception as e:
+            print(f"❌ Error processing audit summary compliance: {str(e)}")
     
     def _analyze_compliance_with_ai(self, extracted_data, driver_type):
         """Use AI to analyze compliance with enhanced accuracy"""
