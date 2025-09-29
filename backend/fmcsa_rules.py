@@ -1180,7 +1180,7 @@ class FMCSARules:
                 self.ai_analysis_result = ai_result
                 
             else:
-                print("⚠️  AI analysis failed, falling back to traditional analysis")
+                print("[WARNING] AI analysis failed, falling back to traditional analysis")
                 self._analyze_compliance_traditional(extracted_data, driver_type)
                 
         except Exception as e:
@@ -2096,7 +2096,7 @@ class FMCSARules:
         
         # This would require looking at 8 consecutive days
         # For now, flag as a violation that needs manual review
-        print(f"      ⚠️  70-hour/8-day cycle violation flagged for manual review")
+        print(f"      [WARNING] 70-hour/8-day cycle violation flagged for manual review")
         self._add_violation({
             'date': date,
             'type': 'HOS_70_HOUR_8_DAY_VIOLATION',
