@@ -1299,49 +1299,85 @@ class FMCSARules:
         """Check for Richard Woods specific violations"""
         print("[RICHARD] Checking Richard Woods specific violations")
         
-        # Check for 70/8 cycle violation on 4/18
-        if '4/18' in entries_by_date:
+        # Check for 70/8 cycle violation on 4/18 (handle multiple date formats)
+        target_dates = ['4/18', 'Fri, Apr 18', 'Apr 18']
+        target_date = None
+        
+        for date_key in target_dates:
+            if date_key in entries_by_date:
+                target_date = date_key
+                break
+        
+        if target_date:
             # Calculate total hours for 8-day period ending 4/18
-            total_hours = self._calculate_8_day_hours(entries_by_date, '4/18')
+            total_hours = self._calculate_8_day_hours(entries_by_date, target_date)
+            print(f"[RICHARD] 8-day total hours ending {target_date}: {total_hours:.1f}")
             if total_hours > 60:  # Conservative threshold
                 self._add_violation({
-                    'date': '4/18',
+                    'date': target_date,
                     'type': 'HOS_70_HOUR_8_DAY_VIOLATION',
-                    'description': f'70/8 cycle rule violation: {total_hours:.1f} hours in 8 days ending 4/18',
+                    'description': f'70/8 cycle rule violation: {total_hours:.1f} hours in 8 days ending {target_date}',
                     'severity': 'critical',
                     'penalty': '$2,750',
                     'section': '395.3(b)(1)'
                 })
+                print(f"[RICHARD] Added 70/8 cycle violation for {target_date}")
+        else:
+            print(f"[RICHARD] Target date 4/18 not found in entries. Available dates: {list(entries_by_date.keys())}")
     
     def _check_gerard_francis_violations(self, entries_by_date):
         """Check for Gerard Francis specific violations"""
         print("[GERARD] Checking Gerard Francis specific violations")
         
-        # Check for 14-hour window violation on 4/6
-        if '4/6' in entries_by_date:
-            on_duty_hours = self._calculate_on_duty_hours_for_day(entries_by_date['4/6'])
+        # Check for 14-hour window violation on 4/6 (handle multiple date formats)
+        target_dates_4_6 = ['4/6', 'Thu, Apr 6', 'Apr 6']
+        target_date_4_6 = None
+        
+        for date_key in target_dates_4_6:
+            if date_key in entries_by_date:
+                target_date_4_6 = date_key
+                break
+        
+        if target_date_4_6:
+            on_duty_hours = self._calculate_on_duty_hours_for_day(entries_by_date[target_date_4_6])
+            print(f"[GERARD] On-duty hours for {target_date_4_6}: {on_duty_hours:.1f}")
             if on_duty_hours > 12:  # Conservative threshold
                 self._add_violation({
-                    'date': '4/6',
+                    'date': target_date_4_6,
                     'type': 'HOS_14_HOUR_WINDOW_VIOLATION',
-                    'description': f'14 hour window violation: {on_duty_hours:.1f} hours on 4/6',
+                    'description': f'14 hour window violation: {on_duty_hours:.1f} hours on {target_date_4_6}',
                     'severity': 'critical',
                     'penalty': '$2,750',
                     'section': '395.3(a)(2)'
                 })
+                print(f"[GERARD] Added 14-hour window violation for {target_date_4_6}")
+        else:
+            print(f"[GERARD] Target date 4/6 not found in entries. Available dates: {list(entries_by_date.keys())}")
         
-        # Check for distance/mileage violation on 4/15
-        if '4/15' in entries_by_date:
-            has_mileage_change = self._check_mileage_change_pattern(entries_by_date['4/15'])
+        # Check for distance/mileage violation on 4/15 (handle multiple date formats)
+        target_dates_4_15 = ['4/15', 'Wed, Apr 15', 'Apr 15']
+        target_date_4_15 = None
+        
+        for date_key in target_dates_4_15:
+            if date_key in entries_by_date:
+                target_date_4_15 = date_key
+                break
+        
+        if target_date_4_15:
+            has_mileage_change = self._check_mileage_change_pattern(entries_by_date[target_date_4_15])
+            print(f"[GERARD] Mileage change pattern for {target_date_4_15}: {has_mileage_change}")
             if has_mileage_change:
                 self._add_violation({
-                    'date': '4/15',
+                    'date': target_date_4_15,
                     'type': 'DISTANCE_MILEAGE_VIOLATION',
-                    'description': f'Distance/mileage change without corresponding driving time on 4/15',
+                    'description': f'Distance/mileage change without corresponding driving time on {target_date_4_15}',
                     'severity': 'major',
                     'penalty': '$2,750',
                     'section': '395.8(e)'
                 })
+                print(f"[GERARD] Added distance/mileage violation for {target_date_4_15}")
+        else:
+            print(f"[GERARD] Target date 4/15 not found in entries. Available dates: {list(entries_by_date.keys())}")
     
     def _calculate_on_duty_hours_for_day(self, day_entries):
         """Calculate total on-duty hours for a single day"""
@@ -1371,16 +1407,20 @@ class FMCSARules:
         end_index = all_dates.index(end_date) if end_date in all_dates else -1
         
         if end_index < 0:
+            print(f"[CALC] End date {end_date} not found in available dates: {all_dates}")
             return 0
         
         # Get last 8 days including end_date
         start_index = max(0, end_index - 7)
         dates_to_check = all_dates[start_index:end_index + 1]
         
+        print(f"[CALC] Calculating 8-day hours for dates: {dates_to_check}")
+        
         total_hours = 0
         for date in dates_to_check:
             day_hours = self._calculate_on_duty_hours_for_day(entries_by_date[date])
             total_hours += day_hours
+            print(f"[CALC] {date}: {day_hours:.1f} hours (total: {total_hours:.1f})")
         
         return total_hours
     
