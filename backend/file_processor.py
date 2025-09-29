@@ -871,7 +871,8 @@ class FileProcessor:
                             'location': entry.get('location', 'Unknown'),
                             'duty_status': [{
                                 'status': entry.get('duty_status', 'unknown'),
-                                'line': f"{entry.get('time', '00:00')} - {entry.get('duty_status', 'unknown')} - {entry.get('location', 'Unknown')}"
+                                'line': f"{entry.get('time', '00:00')} - {entry.get('duty_status', 'unknown')} - {entry.get('location', 'Unknown')}",
+                                'remarks': entry.get('remarks', '')
                             }]
                         })
                 

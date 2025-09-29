@@ -151,7 +151,7 @@ class FMCSARules:
 
             # Add violation for missing log entries
             self._add_violation({
-                'date': 'unknown',
+                'date': self._get_default_date(),
                 'type': 'FORM_MANNER_MISSING_ENTRIES',
                 'description': 'Driver log contains no entries or duty status records',
                 'severity': 'major',
@@ -401,7 +401,7 @@ class FMCSARules:
             if driver_type == 'long-haul':
                 if week_hours > self.hos_rules['max_70_hour_week']:
                     self._add_violation({
-                        'date': week_start or 'unknown',
+                        'date': week_start or self._get_default_date(),
                         'type': 'HOS_WEEKLY_LIMIT_EXCEEDED',
                         'description': f'Weekly hours exceeded 70-hour limit: {week_hours} hours (estimated)',
                         'severity': 'major',
@@ -411,7 +411,7 @@ class FMCSARules:
             else:
                 if week_hours > self.hos_rules['max_60_hour_week']:
                     self._add_violation({
-                        'date': week_start or 'unknown',
+                        'date': week_start or self._get_default_date(),
                         'type': 'HOS_WEEKLY_LIMIT_EXCEEDED',
                         'description': f'Weekly hours exceeded 60-hour limit: {week_hours} hours (estimated)',
                         'severity': 'major',
@@ -441,7 +441,7 @@ class FMCSARules:
                 
                 if eight_day_hours > self.hos_rules['max_70_hour_8_days']:
                     self._add_violation({
-                        'date': sorted_dates[i] if i < len(sorted_dates) else 'unknown',
+                        'date': sorted_dates[i] if i < len(sorted_dates) else self._get_default_date(),
                         'type': 'HOS_70_8_CYCLE_VIOLATION',
                         'description': f'70/8 cycle rule violated: {eight_day_hours} hours in 8 consecutive days',
                         'severity': 'major',
@@ -467,7 +467,7 @@ class FMCSARules:
                 other_dates = [e.get('date') for e in entries if e.get('date')]
                 if other_dates:
                     self._add_violation({
-                        'date': 'unknown',
+                        'date': self._get_default_date(),
                         'type': 'FORM_MANNER_MISSING_DATE',
                     'description': 'Missing date in driver log entry',
                     'severity': 'minor',
@@ -483,7 +483,7 @@ class FMCSARules:
             if not duty_statuses and entry.get('time'):
                 # Only flag if this looks like it should have a duty status
                 self._add_violation({
-                    'date': entry.get('date', 'unknown'),
+                    'date': entry.get('date', self._get_default_date()),
                     'type': 'FORM_MANNER_MISSING_DUTY_STATUS',
 
                     'description': 'Missing duty status for timed entry',
@@ -515,7 +515,7 @@ class FMCSARules:
         entries = log_data.get('entries', [])
         if not entries:
             self._add_violation({
-                'date': 'unknown',
+                'date': self._get_default_date(),
                 'type': 'HOS_MISSING_RODS',
                 'description': 'No Record of Duty Status (RODS) found',
                 'severity': 'major',
@@ -554,7 +554,7 @@ class FMCSARules:
                         # Only flag if this is clearly impossible (e.g., 16:00 followed by 06:00)
                         if current_hour >= 16 and next_hour <= 6:
                             self._add_violation({
-                                'date': current_entry.get('date', 'unknown'),
+                                'date': current_entry.get('date', self._get_default_date()),
                                 'type': 'FALSIFICATION_TIME_SEQUENCE',
                                 'description': 'Suspicious time sequence detected in driver log',
                                 'severity': 'major',
@@ -581,7 +581,7 @@ class FMCSARules:
                         len(set(current_status_values) ^ set(previous_status_values)) > 0):
                         # This is a real conflict - flag it
                         self._add_violation({
-                            'date': entry.get('date', 'unknown'),
+                            'date': entry.get('date', self._get_default_date()),
                             'type': 'FALSIFICATION_DUPLICATE_ENTRIES',
                             'description': 'Conflicting duty status entries at same time',
                             'severity': 'major',
@@ -625,7 +625,7 @@ class FMCSARules:
             duty_status = (receipt_data.get('duty_status') or '').lower()
             if duty_status == 'off duty':
                 self._add_violation({
-                    'date': receipt_data.get('date', 'unknown'),
+                    'date': receipt_data.get('date', self._get_default_date()),
                     'type': 'FUEL_OFF_DUTY_VIOLATION',
                     'description': 'Fueling while marked off duty - fueling is on-duty activity',
                     'severity': 'major',
@@ -636,7 +636,7 @@ class FMCSARules:
             # Check for missing fuel information
             if not receipt_data.get('fuel_amount'):
                 self._add_violation({
-                    'date': receipt_data.get('date', 'unknown'),
+                    'date': receipt_data.get('date', self._get_default_date()),
                     'type': 'FUEL_MISSING_AMOUNT',
                     'description': 'Fuel receipt missing fuel amount',
                     'severity': 'minor',
@@ -660,7 +660,7 @@ class FMCSARules:
             for field in required_fields:
                 if not bol_data.get(field):
                     self._add_violation({
-                        'date': bol_data.get('date', 'unknown'),
+                        'date': bol_data.get('date', self._get_default_date()),
                         'type': 'BOL_MISSING_FIELD',
                         'description': f'Missing required BOL field: {field}',
                         'severity': 'minor',
@@ -730,7 +730,7 @@ class FMCSARules:
         if total_files == 0:
             # Only add violation if no files were processed at all
             self._add_violation({
-                'date': 'unknown',
+                'date': self._get_default_date(),
                 'type': 'COMPLIANCE_NO_FILES',
                 'description': 'No files were processed for compliance analysis',
                 'severity': 'minor',
@@ -740,7 +740,7 @@ class FMCSARules:
         elif not driver_logs and not fuel_receipts and not bills_of_lading and not weekly_summaries:
             # Only add violation if file processing failed completely
             self._add_violation({
-                'date': 'unknown',
+                'date': self._get_default_date(),
                 'type': 'COMPLIANCE_PROCESSING_FAILED',
                 'description': 'File processing failed - unable to extract data for analysis',
                 'severity': 'minor',
@@ -847,7 +847,7 @@ class FMCSARules:
                 l = line.lower()
                 if (' pc ' in f" {l} " or 'personal conveyance' in l) and ('drive' in l or 'driving' in l or 'mi' in l or 'mph' in l):
                     self._add_violation({
-                        'date': self._extract_any_date(l) or 'unknown',
+                        'date': self._extract_any_date(l) or self._get_default_date(),
                         'type': 'PC_MISUSE_VIOLATION',
                         'description': 'Misuse of Personal Conveyance (PC) detected in log remarks',
                         'severity': 'major',
@@ -889,7 +889,7 @@ class FMCSARules:
                     window = ' '.join(lines[max(0, i-3):i+4]).lower()
                     if 'off duty' in window or ' pc ' in f" {window} ":
                         self._add_violation({
-                            'date': date or 'unknown',
+                            'date': date or self._get_default_date(),
                             'type': 'FUEL_WITHOUT_ON_DUTY_TIME',
                             'description': 'Fuel transaction without corresponding on-duty time',
                             'severity': 'major',
@@ -904,7 +904,7 @@ class FMCSARules:
             # Look for patterns like "driving 11:30" or total driving > 11 mentioned
             if re.search(r'driving\s*(1[12]:\d\d|1[2-9]\.\d|1[2-9] hours?)', text):
                 self._add_violation({
-                    'date': self._extract_any_date(text) or 'unknown',
+                    'date': self._extract_any_date(text) or self._get_default_date(),
                     'type': 'HOS_DRIVING_HOURS_EXCEEDED',
                     'description': 'Text indicates driving duration beyond 11 hours',
                     'severity': 'major',
@@ -914,7 +914,7 @@ class FMCSARules:
             # Break mention
             if re.search(r'(no\s*30\s*min|miss(ing)?\s*30\s*min|no break)', text):
                 self._add_violation({
-                    'date': self._extract_any_date(text) or 'unknown',
+                    'date': self._extract_any_date(text) or self._get_default_date(),
                     'type': 'HOS_BREAK_VIOLATION',
                     'description': 'Text indicates missing 30-minute break after 8 hours driving',
                     'severity': 'major',
@@ -927,12 +927,19 @@ class FMCSARules:
             # Numeric formats MM/DD(/YY|YYYY) or MM-DD(-YY|YYYY)
             m = re.search(r'(\b\d{1,2}/\d{1,2}/\d{2,4}\b|\b\d{1,2}-\d{1,2}-\d{2,4}\b|\b\d{1,2}/\d{1,2}\b|\b\d{1,2}-\d{1,2}\b)', text)
             if m:
-                return m.group(1)
+                date_str = m.group(1)
+                # If it's M/D format without year, assume current year (2025)
+                if '/' in date_str and len(date_str.split('/')) == 2:
+                    return f"{date_str}/2025"
+                elif '-' in date_str and len(date_str.split('-')) == 2:
+                    return f"{date_str}-2025"
+                return date_str
+            
             # Month name formats (avoid generic words like OFF)
             month_names = '(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec|January|February|March|April|June|July|August|September|October|November|December)'
             m = re.search(rf'\b{month_names}\s+\d{{1,2}}\b', text, re.I)
             if m:
-                return m.group(0)
+                return f"{m.group(0)} 2025"
         except Exception:
             return None
         return None
@@ -1134,7 +1141,7 @@ class FMCSARules:
             # If no violations found in audit summary, add a note
             if not violations:
                 self._add_violation({
-                    'date': 'unknown',
+                    'date': self._get_default_date(),
                     'type': 'AUDIT_SUMMARY_NO_VIOLATIONS',
                     'description': f'Audit summary for {driver_name} shows no violations',
                     'severity': 'minor',
@@ -1228,9 +1235,6 @@ class FMCSARules:
         driver_logs = extracted_data.get('driver_logs', [])
         
         for log_data in driver_logs:
-            if not log_data.get('ai_enhanced', False):
-                continue
-                
             entries = log_data.get('entries', [])
             driver_info = log_data.get('driver_info', {})
             
@@ -1326,45 +1330,138 @@ class FMCSARules:
     
     def _check_11_hour_driving_generic(self, date, entries):
         """Generic 11-hour driving violation detection"""
-        driving_hours = 0
-        
-        for entry in entries:
-            duty_statuses = entry.get('duty_status', [])
-            for status_info in duty_statuses:
-                status = status_info.get('status', '').lower()
-                if status == 'driving':
-                    driving_hours += 1  # Simplified - assume 1 hour per entry
+        # Calculate actual driving hours for the day
+        driving_hours = self._calculate_driving_hours_for_day(entries)
         
         if driving_hours > 11:
             self._add_violation({
                 'date': date,
-                'type': 'HOS_11_HOUR_DRIVING_VIOLATION',
-                'description': f'Exceeded 11-hour driving limit: {driving_hours} hours on {date}',
+                'type': 'HOS_DRIVING_HOURS_EXCEEDED',
+                'description': f'Exceeded 11-hour driving limit: {driving_hours:.1f} hours on {date}',
                 'severity': 'critical',
                 'penalty': '$2,750',
                 'section': '395.3(a)(1)'
             })
     
-    def _check_14_hour_window_generic(self, date, entries):
-        """Generic 14-hour window violation detection"""
-        on_duty_hours = 0
+    def _calculate_driving_hours_for_day(self, day_entries):
+        """Calculate actual driving hours for a day based on time differences"""
+        if not day_entries:
+            return 0
         
-        for entry in entries:
+        # Sort entries by time
+        sorted_entries = sorted(day_entries, key=lambda x: x.get('time', '00:00'))
+        
+        total_hours = 0
+        current_session_start = None
+        
+        for entry in sorted_entries:
+            entry_time = entry.get('time', '00:00')
             duty_statuses = entry.get('duty_status', [])
+            
             for status_info in duty_statuses:
                 status = status_info.get('status', '').lower()
-                if status in ['driving', 'on_duty_not_driving']:
-                    on_duty_hours += 1  # Simplified - assume 1 hour per entry
+                
+                if status == 'driving':
+                    if current_session_start is None:
+                        current_session_start = entry_time
+                elif status in ['off_duty', 'sleeper_berth', 'on_duty_not_driving']:
+                    if current_session_start is not None:
+                        # Calculate hours for this driving session
+                        session_hours = self._calculate_time_difference(current_session_start, entry_time)
+                        total_hours += session_hours
+                        current_session_start = None
         
+        # If driving session is still active at end of day, calculate remaining hours
+        if current_session_start is not None:
+            session_hours = self._calculate_time_difference(current_session_start, '23:59')
+            total_hours += session_hours
+        
+        return total_hours
+    
+    def _check_14_hour_window_generic(self, date, entries):
+        """Generic 14-hour window violation detection"""
+        # Calculate actual on-duty hours for the day
+        on_duty_hours = self._calculate_on_duty_hours_for_day(entries)
+        
+        # Also check for consecutive on-duty time patterns
+        consecutive_hours = self._calculate_consecutive_on_duty_hours(entries)
+        
+        # Check both daily total and consecutive periods
         if on_duty_hours > 14:
             self._add_violation({
                 'date': date,
                 'type': 'HOS_14_HOUR_WINDOW_VIOLATION',
-                'description': f'Exceeded 14-hour on-duty window: {on_duty_hours} hours on {date}',
+                'description': f'Exceeded 14-hour on-duty window: {on_duty_hours:.1f} hours on {date}',
                 'severity': 'critical',
                 'penalty': '$2,750',
                 'section': '395.3(a)(2)'
             })
+        elif consecutive_hours > 14:
+            self._add_violation({
+                'date': date,
+                'type': 'HOS_14_HOUR_WINDOW_VIOLATION',
+                'description': f'Exceeded 14-hour consecutive on-duty period: {consecutive_hours:.1f} hours on {date}',
+                'severity': 'critical',
+                'penalty': '$2,750',
+                'section': '395.3(a)(2)'
+            })
+        elif on_duty_hours > 12:
+            # Warning for approaching limit
+            self._add_violation({
+                'date': date,
+                'type': 'HOS_14_HOUR_WARNING',
+                'description': f'Approaching 14-hour on-duty limit: {on_duty_hours:.1f} hours on {date}',
+                'severity': 'minor',
+                'penalty': '$0',
+                'section': '395.3(a)(2)'
+            })
+    
+    def _calculate_consecutive_on_duty_hours(self, day_entries):
+        """Calculate maximum consecutive on-duty hours"""
+        if not day_entries:
+            return 0
+        
+        # Sort entries by time
+        sorted_entries = sorted(day_entries, key=lambda x: x.get('time', '00:00'))
+        
+        max_consecutive = 0
+        current_consecutive = 0
+        current_session_start = None
+        
+        for entry in sorted_entries:
+            entry_time = entry.get('time', '00:00')
+            duty_statuses = entry.get('duty_status', [])
+            
+            is_on_duty = False
+            for status_info in duty_statuses:
+                status = status_info.get('status', '').lower()
+                if status in ['driving', 'on_duty_not_driving']:
+                    is_on_duty = True
+                    break
+            
+            if is_on_duty:
+                if current_session_start is None:
+                    current_session_start = entry_time
+                current_consecutive += 1
+            else:
+                if current_session_start is not None:
+                    # Calculate hours for this consecutive session
+                    session_hours = self._calculate_time_difference(current_session_start, entry_time)
+                    max_consecutive = max(max_consecutive, session_hours)
+                    current_consecutive = 0
+                    current_session_start = None
+        
+        # Check final session if still active
+        if current_session_start is not None:
+            session_hours = self._calculate_time_difference(current_session_start, '23:59')
+            max_consecutive = max(max_consecutive, session_hours)
+        
+        return max_consecutive
+    
+    def _get_default_date(self):
+        """Get a default date when no specific date is available"""
+        from datetime import datetime
+        return datetime.now().strftime('%m/%d/%Y')
     
     def _check_70_hour_8_day_generic(self, date, entries, all_entries_by_date):
         """Generic 70-hour/8-day cycle violation detection"""
@@ -1383,15 +1480,7 @@ class FMCSARules:
             
             for check_date in dates_to_check:
                 day_entries = all_entries_by_date[check_date]
-                on_duty_hours = 0
-                
-                for entry in day_entries:
-                    duty_statuses = entry.get('duty_status', [])
-                    for status_info in duty_statuses:
-                        status = status_info.get('status', '').lower()
-                        if status in ['driving', 'on_duty_not_driving']:
-                            on_duty_hours += 1  # Simplified - assume 1 hour per entry
-                
+                on_duty_hours = self._calculate_on_duty_hours_for_day(day_entries)
                 total_on_duty_hours += on_duty_hours
                 days_checked += 1
         
@@ -1400,7 +1489,7 @@ class FMCSARules:
             self._add_violation({
                 'date': date,
                 'type': 'HOS_70_HOUR_8_DAY_VIOLATION',
-                'description': f'70-hour/8-day cycle violation: {total_on_duty_hours} hours in {days_checked} days ending {date}',
+                'description': f'70-hour/8-day cycle violation: {total_on_duty_hours:.1f} hours in 8 days ending {date}',
                 'severity': 'critical',
                 'penalty': '$2,750',
                 'section': '395.3(b)(1)'
@@ -1509,8 +1598,54 @@ class FMCSARules:
     
     def _check_pc_misuse_generic(self, date, entries):
         """Generic PC misuse violation detection"""
-        pc_entries = []
+        pc_violations_found = []
         
+        for entry in entries:
+            duty_statuses = entry.get('duty_status', [])
+            entry_time = entry.get('time', '')
+            
+            for status_info in duty_statuses:
+                status = status_info.get('status', '').lower()
+                remarks = status_info.get('remarks', '').lower()
+                
+                # Check for PC-related entries
+                if (status == 'personal conveyance' or 
+                    'pc' in remarks or 
+                    'personal conveyance' in remarks or
+                    'personal' in remarks and 'conveyance' in remarks):
+                    
+                    # Check for inappropriate PC usage patterns
+                    inappropriate_patterns = [
+                        'commercial', 'cargo', 'load', 'freight', 'delivery',
+                        'customer', 'pickup', 'drop', 'shipping', 'business',
+                        'work', 'job', 'route', 'dispatch', 'truck', 'trailer'
+                    ]
+                    
+                    # Check if PC is used for commercial purposes
+                    if any(pattern in remarks for pattern in inappropriate_patterns):
+                        pc_violations_found.append(f"{entry_time}: {remarks}")
+                    
+                    # Check if PC is used without proper justification
+                    appropriate_keywords = ['home', 'terminal', 'domicile', 'residence', 'yard', 'base', 'rest']
+                    if not any(keyword in remarks for keyword in appropriate_keywords):
+                        # Additional check for suspicious PC usage
+                        if len(remarks) > 10 and not any(word in remarks for word in ['off', 'break', 'meal', 'rest']):
+                            pc_violations_found.append(f"{entry_time}: {remarks}")
+        
+        # Add violation if PC misuse patterns found
+        if pc_violations_found:
+            violation_details = '; '.join(pc_violations_found[:3])  # Show first 3
+            self._add_violation({
+                'date': date,
+                'type': 'PC_MISUSE_VIOLATION',
+                'description': f'Misuse of Personal Conveyance (PC) detected on {date}: {violation_details}',
+                'severity': 'major',
+                'penalty': '$2,750',
+                'section': '395.8(e)'
+            })
+        
+        # If PC usage found but seems appropriate, flag for review
+        pc_entries = []
         for entry in entries:
             duty_statuses = entry.get('duty_status', [])
             entry_time = entry.get('time', '')
@@ -1521,22 +1656,7 @@ class FMCSARules:
                 
                 if status == 'personal conveyance' or 'pc' in remarks:
                     pc_entries.append(f"{entry_time}: {remarks}")
-                    
-                    # Check if PC is being used appropriately
-                    appropriate_keywords = ['home', 'terminal', 'domicile', 'residence', 'yard', 'base']
-                    if not any(keyword in remarks for keyword in appropriate_keywords):
-                        pc_info = '; '.join(pc_entries[:2])
-                        self._add_violation({
-                            'date': date,
-                            'type': 'PC_MISUSE_VIOLATION',
-                            'description': f'Misuse of Personal Conveyance (PC) detected on {date}. Details: {pc_info}',
-                            'severity': 'major',
-                            'penalty': '$2,750',
-                            'section': '395.8(e)'
-                        })
-                        return
         
-        # If PC usage found but seems appropriate, flag for review
         if pc_entries:
             pc_info = '; '.join(pc_entries[:2])
             self._add_violation({
@@ -1564,14 +1684,46 @@ class FMCSARules:
         """Generic distance/mileage violation detection"""
         has_mileage_change = False
         has_driving_time = False
+        mileage_values = []
+        suspicious_patterns = []
         
         for entry in entries:
             duty_statuses = entry.get('duty_status', [])
             remarks = ' '.join([status.get('remarks', '') for status in duty_statuses]).lower()
             
-            # Check for mileage/odometer changes
-            if any(keyword in remarks for keyword in ['mile', 'odometer', 'odometer change', 'mileage']):
+            # Check for mileage/odometer changes in remarks
+            mileage_keywords = ['mile', 'odometer', 'odometer change', 'mileage', 'miles', 'distance', 'km', 'kilometer']
+            if any(keyword in remarks for keyword in mileage_keywords):
                 has_mileage_change = True
+                suspicious_patterns.append(f"Mileage mentioned: {remarks[:50]}")
+            
+            # Check for numeric odometer readings (e.g., "odometer 12345", "12345 miles")
+            import re
+            odometer_patterns = [
+                r'odometer\s+(\d+)',  # "odometer 12345"
+                r'(\d+)\s*miles?',   # "12345 miles"
+                r'mileage\s+(\d+)',  # "mileage 12345"
+                r'(\d+)\s*km',       # "12345 km"
+            ]
+            
+            for pattern in odometer_patterns:
+                matches = re.findall(pattern, remarks)
+                if matches:
+                    has_mileage_change = True
+                    suspicious_patterns.append(f"Odometer reading: {matches[0]}")
+                    break
+            
+            # Check for actual mileage values in entry data
+            miles = entry.get('miles', 0)
+            if miles and miles > 0:
+                mileage_values.append(miles)
+                has_mileage_change = True
+            
+            # Check for distance-related patterns
+            distance_patterns = ['location change', 'position change', 'gps', 'coordinates', 'lat', 'lon']
+            if any(pattern in remarks for pattern in distance_patterns):
+                has_mileage_change = True
+                suspicious_patterns.append(f"Location change: {remarks[:50]}")
             
             # Check for driving time
             for status_info in duty_statuses:
@@ -1580,16 +1732,120 @@ class FMCSARules:
                     has_driving_time = True
                     break
         
+        # Check for mileage changes between entries
+        if len(mileage_values) > 1:
+            mileage_changes = [mileage_values[i] - mileage_values[i-1] for i in range(1, len(mileage_values))]
+            if any(change > 0 for change in mileage_changes):
+                has_mileage_change = True
+                suspicious_patterns.append(f"Mileage increased: {max(mileage_changes):.1f} miles")
+        
+        # Check for odometer reading changes in remarks across entries
+        odometer_readings = []
+        for entry in entries:
+            duty_statuses = entry.get('duty_status', [])
+            remarks = ' '.join([status.get('remarks', '') for status in duty_statuses]).lower()
+            
+            # Extract odometer readings from remarks
+            import re
+            odometer_patterns = [
+                r'odometer\s+(\d+)',  # "odometer 12345"
+                r'(\d+)\s*miles?',   # "12345 miles"
+                r'mileage\s+(\d+)',  # "mileage 12345"
+            ]
+            
+            for pattern in odometer_patterns:
+                matches = re.findall(pattern, remarks)
+                if matches:
+                    try:
+                        odometer_readings.append(int(matches[0]))
+                        break
+                    except ValueError:
+                        continue
+        
+        # Check for odometer changes
+        if len(odometer_readings) > 1:
+            odometer_changes = [odometer_readings[i] - odometer_readings[i-1] for i in range(1, len(odometer_readings))]
+            if any(change > 0 for change in odometer_changes):
+                has_mileage_change = True
+                suspicious_patterns.append(f"Odometer increased: {max(odometer_changes)} units")
+        
+        # Check for suspicious patterns without driving
         if has_mileage_change and not has_driving_time:
+            pattern_details = '; '.join(suspicious_patterns[:3])
             self._add_violation({
                 'date': date,
                 'type': 'DISTANCE_MILEAGE_VIOLATION',
-                'description': f'Distance/mileage change without corresponding driving time on {date}',
+                'description': f'Distance/mileage change without corresponding driving time on {date}: {pattern_details}',
                 'severity': 'major',
                 'penalty': '$2,750',
                 'section': '395.8(e)'
             })
+        elif has_mileage_change and len(suspicious_patterns) > 2:
+            # Flag for review if multiple suspicious patterns
+            pattern_details = '; '.join(suspicious_patterns[:2])
+            self._add_violation({
+                'date': date,
+                'type': 'DISTANCE_MILEAGE_REVIEW',
+                'description': f'Multiple distance/mileage patterns detected on {date}: {pattern_details}',
+                'severity': 'minor',
+                'penalty': '$0',
+                'section': '395.8(e)'
+            })
     
+    def _calculate_on_duty_hours_for_day(self, day_entries):
+        """Calculate actual on-duty hours for a day based on time differences"""
+        if not day_entries:
+            return 0
+        
+        # Sort entries by time
+        sorted_entries = sorted(day_entries, key=lambda x: x.get('time', '00:00'))
+        
+        total_hours = 0
+        current_session_start = None
+        current_status = None
+        
+        for entry in sorted_entries:
+            entry_time = entry.get('time', '00:00')
+            duty_statuses = entry.get('duty_status', [])
+            
+            for status_info in duty_statuses:
+                status = status_info.get('status', '').lower()
+                
+                if status in ['driving', 'on_duty_not_driving']:
+                    if current_session_start is None:
+                        current_session_start = entry_time
+                        current_status = status
+                elif status in ['off_duty', 'sleeper_berth']:
+                    if current_session_start is not None:
+                        # Calculate hours for this session
+                        session_hours = self._calculate_time_difference(current_session_start, entry_time)
+                        total_hours += session_hours
+                        current_session_start = None
+                        current_status = None
+        
+        # If session is still active at end of day, calculate remaining hours
+        if current_session_start is not None:
+            session_hours = self._calculate_time_difference(current_session_start, '23:59')
+            total_hours += session_hours
+        
+        return total_hours
+    
+    def _calculate_time_difference(self, start_time, end_time):
+        """Calculate hours between two time strings"""
+        try:
+            from datetime import datetime
+            
+            # Parse time strings
+            start_dt = datetime.strptime(start_time, '%H:%M')
+            end_dt = datetime.strptime(end_time, '%H:%M')
+            
+            # Calculate difference
+            diff = end_dt - start_dt
+            hours = diff.total_seconds() / 3600
+            
+            return max(0, hours)  # Don't return negative hours
+        except:
+            return 1  # Fallback to 1 hour if parsing fails
     
     def _check_30_minute_break_specific(self, date, entries):
         """Check for 30-minute break violation on specific date"""
@@ -1714,12 +1970,19 @@ class FMCSARules:
             # Numeric formats MM/DD(/YY|YYYY) or MM-DD(-YY|YYYY)
             m = re.search(r'(\b\d{1,2}/\d{1,2}/\d{2,4}\b|\b\d{1,2}-\d{1,2}-\d{2,4}\b|\b\d{1,2}/\d{1,2}\b|\b\d{1,2}-\d{1,2}\b)', text)
             if m:
-                return m.group(1)
+                date_str = m.group(1)
+                # If it's M/D format without year, assume current year (2025)
+                if '/' in date_str and len(date_str.split('/')) == 2:
+                    return f"{date_str}/2025"
+                elif '-' in date_str and len(date_str.split('-')) == 2:
+                    return f"{date_str}-2025"
+                return date_str
+            
             # Month name formats (avoid generic words like OFF)
             month_names = '(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec|January|February|March|April|June|July|August|September|October|November|December)'
             m = re.search(rf'\b{month_names}\s+\d{{1,2}}\b', text, re.I)
             if m:
-                return m.group(0)
+                return f"{m.group(0)} 2025"
         except Exception:
             return None
         return None
