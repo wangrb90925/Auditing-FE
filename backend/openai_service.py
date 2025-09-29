@@ -14,7 +14,7 @@ class OpenAIService:
         if Config.OPENAI_API_KEY:
             self.client = OpenAI(api_key=Config.OPENAI_API_KEY)
         else:
-            print("⚠️  OpenAI API key not configured. AI features will be disabled.")
+            print("[WARNING] OpenAI API key not configured. AI features will be disabled.")
     
     def is_available(self) -> bool:
         """Check if OpenAI service is available"""

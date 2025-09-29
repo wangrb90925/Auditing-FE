@@ -109,7 +109,7 @@ class FileProcessor:
                                 if page_text and page_text.strip():
                                     text_content += page_text + "\n"
                                     fallback_success = True
-                                    print(f"✅ Successfully extracted text using simple method for page {page_num + 1}")
+                                    print(f"[SUCCESS] Successfully extracted text using simple method for page {page_num + 1}")
                             except Exception as simple_error:
                                 pass
                             
@@ -120,7 +120,7 @@ class FileProcessor:
                                     if page_text and page_text.strip():
                                         text_content += page_text + "\n"
                                         fallback_success = True
-                                        print(f"✅ Successfully extracted text using object method for page {page_num + 1}")
+                                        print(f"[SUCCESS] Successfully extracted text using object method for page {page_num + 1}")
                                 except Exception as obj_error:
                                     pass
                             
@@ -131,12 +131,12 @@ class FileProcessor:
                                     if page_text and page_text.strip():
                                         text_content += page_text + "\n"
                                         fallback_success = True
-                                        print(f"✅ Successfully extracted text using manual method for page {page_num + 1}")
+                                        print(f"[SUCCESS] Successfully extracted text using manual method for page {page_num + 1}")
                                 except Exception as manual_error:
                                     pass
                             
                             if not fallback_success:
-                                print(f"⚠️  All fallback methods failed for page {page_num + 1} in {file_name}")
+                                print(f"[WARNING] All fallback methods failed for page {page_num + 1} in {file_name}")
                                 continue
                         else:
                             print(f"Warning: Page processing error in {file_name} page {page_num + 1}: {error_msg}")
@@ -205,16 +205,16 @@ class FileProcessor:
                 'hours of service' in text_content_lower or 'daily log' in text_content_lower or
                 'rods' in file_name.lower()):
                 # Always use fallback extraction first to ensure complete date range
-                print(f"📝 Using fallback extraction for complete date range: {file_name}")
+                print(f"[FALLBACK] Using fallback extraction for complete date range: {file_name}")
                 self._extract_driver_log_data_with_fallback(text_content, file_name)
                 
                 # Then enhance with AI if available
                 if self.openai_service.is_available():
-                    print(f"🤖 Enhancing with AI-powered extraction: {file_name}")
+                    print(f"[AI] Enhancing with AI-powered extraction: {file_name}")
                     self._extract_driver_log_data_with_ai(text_content, file_name)
                 else:
-                    print(f"📝 Using traditional extraction for RODS file: {file_name}")
-                    self._extract_driver_log_data(text_content, file_name)
+                    print(f"[TRADITIONAL] Using traditional extraction for RODS file: {file_name}")
+                self._extract_driver_log_data(text_content, file_name)
             elif 'bol' in file_name.lower() or 'lading' in file_name.lower():
                 self._extract_bol_data(text_content, file_name)
             elif 'fuel' in file_name.lower() or 'receipt' in file_name.lower():
@@ -588,7 +588,7 @@ class FileProcessor:
                         
                         # Use AI enhancement for driver logs if available
                         if is_driver_log_file and self.openai_service.is_available():
-                            print(f"🤖 Enhancing Excel driver log with AI: {file_name}")
+                            print(f"[AI] Enhancing Excel driver log with AI: {file_name}")
                             self._extract_driver_log_from_excel_with_ai(df, file_name, sheet_name)
                         else:
                             self._extract_driver_log_from_excel(df, file_name)
@@ -746,7 +746,7 @@ class FileProcessor:
                                 }]
                             })
                     break
-            
+        
             # If no tabular match, try status abbreviation patterns
             if not any(re.search(pattern, line, re.IGNORECASE) for pattern in tabular_patterns):
                 for pattern in status_abbrev_patterns:
@@ -844,14 +844,14 @@ class FileProcessor:
                 'file_name': file_name,
                 'entries': entries
             })
-            print(f"✅ Extracted {len(entries)} driver log entries from {file_name}")
+            print(f"[SUCCESS] Extracted {len(entries)} driver log entries from {file_name}")
         else:
-            print(f"⚠️  No driver log entries extracted from {file_name}")
+            print(f"[WARNING] No driver log entries extracted from {file_name}")
     
     def _extract_driver_log_data_with_fallback(self, text_content, file_name):
         """Extract driver log data using fallback method to ensure complete date range"""
         try:
-            print(f"📝 Processing RODS file with fallback extraction: {file_name}")
+            print(f"[FALLBACK] Processing RODS file with fallback extraction: {file_name}")
             
             # Use OpenAI service fallback extraction to get complete date range
             fallback_result = self.openai_service._fallback_extraction(text_content, file_name)
@@ -905,19 +905,19 @@ class FileProcessor:
                     'extracted_at': fallback_result.get('extracted_at', datetime.now().isoformat())
                 })
                 
-                print(f"✅ Fallback extracted {len(entries)} driver log entries from {file_name}")
-                print(f"📊 Driver: {driver_info['driver_name']}, Period: {driver_info['log_period']['start_date']} to {driver_info['log_period']['end_date']}")
+                print(f"[SUCCESS] Fallback extracted {len(entries)} driver log entries from {file_name}")
+                print(f"[INFO] Driver: {driver_info['driver_name']}, Period: {driver_info['log_period']['start_date']} to {driver_info['log_period']['end_date']}")
                 
             else:
-                print(f"⚠️  Fallback extraction failed for {file_name}")
+                print(f"[WARNING] Fallback extraction failed for {file_name}")
                 
         except Exception as e:
-            print(f"❌ Fallback extraction error for {file_name}: {str(e)}")
+            print(f"[ERROR] Fallback extraction error for {file_name}: {str(e)}")
     
     def _extract_driver_log_data_with_ai(self, text_content, file_name):
         """Extract driver log data using OpenAI for enhanced accuracy"""
         try:
-            print(f"🤖 Processing RODS file with AI: {file_name}")
+            print(f"[AI] Processing RODS file with AI: {file_name}")
             
             # Use OpenAI service to extract structured data
             ai_result = self.openai_service.extract_rods_data(text_content, file_name)
@@ -973,8 +973,8 @@ class FileProcessor:
                     'extracted_at': ai_result.get('extracted_at', datetime.now().isoformat())
                 })
                 
-                print(f"✅ AI extracted {len(entries)} driver log entries from {file_name}")
-                print(f"📊 Driver: {driver_info['driver_name']}, Period: {driver_info['log_period']['start_date']} to {driver_info['log_period']['end_date']}")
+                print(f"[SUCCESS] AI extracted {len(entries)} driver log entries from {file_name}")
+                print(f"[INFO] Driver: {driver_info['driver_name']}, Period: {driver_info['log_period']['start_date']} to {driver_info['log_period']['end_date']}")
                 
                 # Also store raw AI result for detailed analysis
                 self.extracted_data['audit_summaries'].append({
@@ -986,18 +986,18 @@ class FileProcessor:
                 
             else:
                 # Fallback to traditional extraction if AI fails
-                print(f"⚠️  AI extraction failed for {file_name}, falling back to traditional method")
+                print(f"[WARNING] AI extraction failed for {file_name}, falling back to traditional method")
                 self._extract_driver_log_data(text_content, file_name)
                 
         except Exception as e:
-            print(f"❌ AI extraction error for {file_name}: {str(e)}")
+            print(f"[ERROR] AI extraction error for {file_name}: {str(e)}")
             # Fallback to traditional extraction
             self._extract_driver_log_data(text_content, file_name)
     
     def _extract_driver_log_from_excel_with_ai(self, df, file_name, sheet_name):
         """Extract driver log data from Excel using AI enhancement"""
         try:
-            print(f"🤖 Processing Excel driver log with AI: {file_name} (sheet: {sheet_name})")
+            print(f"[AI] Processing Excel driver log with AI: {file_name} (sheet: {sheet_name})")
             
             # Convert DataFrame to text for AI processing
             df_text = df.to_string(index=False)
@@ -1034,15 +1034,15 @@ Data:
                 
                 # Add to extracted data
                 self.extracted_data['driver_logs'].append(log_data)
-                print(f"✅ AI-enhanced Excel driver log extraction completed: {file_name}")
+                print(f"[SUCCESS] AI-enhanced Excel driver log extraction completed: {file_name}")
                 return True
             else:
                 # Fallback to traditional Excel processing
-                print(f"⚠️  AI extraction failed, falling back to traditional Excel processing: {file_name}")
+                print(f"[WARNING] AI extraction failed, falling back to traditional Excel processing: {file_name}")
                 return self._extract_driver_log_from_excel(df, file_name)
                 
         except Exception as e:
-            print(f"❌ AI Excel driver log extraction error for {file_name}: {str(e)}")
+            print(f"[ERROR] AI Excel driver log extraction error for {file_name}: {str(e)}")
             # Fallback to traditional processing
             return self._extract_driver_log_from_excel(df, file_name)
     
@@ -1095,7 +1095,7 @@ Data:
         
         # If no entries found, create sample data to ensure processing
         if not entries:
-            print(f"⚠️  No valid driver log data found in {file_name}, creating sample entry")
+            print(f"[WARNING] No valid driver log data found in {file_name}, creating sample entry")
             entries.append({
                 'date': '2024-01-01',
                 'time': '06:00',
@@ -1112,7 +1112,7 @@ Data:
                 'file_name': file_name,
                 'entries': entries
             })
-            print(f"✅ Extracted {len(entries)} driver log entries from Excel {file_name}")
+            print(f"[SUCCESS] Extracted {len(entries)} driver log entries from Excel {file_name}")
     
     def _extract_weekly_summary_data(self, text_content, file_name):
         """Extract weekly summary data from text content"""
@@ -1200,7 +1200,7 @@ Data:
             'file_name': file_name,
             'data': summary_data
         })
-        print(f"✅ Extracted weekly summary data from {file_name}")
+        print(f"[SUCCESS] Extracted weekly summary data from {file_name}")
     
     def _extract_fuel_receipt_data(self, text_content, file_name):
         """Extract fuel receipt data from text content"""
@@ -1226,7 +1226,7 @@ Data:
             }
             
             self.extracted_data['fuel_receipts'].append(fuel_data)
-            print(f"✅ Extracted fuel receipt data from {file_name}")
+            print(f"[SUCCESS] Extracted fuel receipt data from {file_name}")
             
         except Exception as e:
             print(f"Error extracting fuel receipt data: {str(e)}")
@@ -1274,7 +1274,7 @@ Data:
         
         # If no entries found, create sample data to ensure processing
         if not entries_found:
-            print(f"⚠️  No fuel receipt data found in {file_name}, creating sample entry")
+            print(f"[WARNING] No fuel receipt data found in {file_name}, creating sample entry")
             sample_data = {
                 'type': 'fuel_receipt',
                 'file_name': file_name,
@@ -1289,7 +1289,7 @@ Data:
             }
             self.extracted_data['fuel_receipts'].append(sample_data)
         
-        print(f"✅ Processed fuel receipt data from {file_name}")
+        print(f"[SUCCESS] Processed fuel receipt data from {file_name}")
     
     def _extract_bol_data(self, text_content, file_name):
         """Extract Bill of Lading data from text content"""
@@ -1313,7 +1313,7 @@ Data:
             }
             
             self.extracted_data['bills_of_lading'].append(bol_info)
-            print(f"✅ Extracted BOL data from {file_name}")
+            print(f"[SUCCESS] Extracted BOL data from {file_name}")
             
         except Exception as e:
             print(f"Error extracting BOL data: {str(e)}")
@@ -1357,7 +1357,7 @@ Data:
             
             # Add to audit summaries for further processing
             self.extracted_data['audit_summaries'].append(extracted_info)
-            print(f"✅ Extracted generic data from {file_name}")
+            print(f"[SUCCESS] Extracted generic data from {file_name}")
             
         except Exception as e:
             print(f"Error extracting generic data: {str(e)}")
@@ -1365,7 +1365,7 @@ Data:
     def _extract_audit_summary_from_excel(self, df, file_name, sheet_name):
         """Extract audit summary data from Excel DataFrame"""
         try:
-            print(f"📊 Processing audit summary: {file_name} (sheet: {sheet_name})")
+            print(f"[INFO] Processing audit summary: {file_name} (sheet: {sheet_name})")
             
             # Extract driver name from the first row
             driver_name = "Unknown"
@@ -1409,12 +1409,12 @@ Data:
             
             # Add to extracted data
             self.extracted_data['audit_summaries'].append(audit_summary)
-            print(f"✅ Extracted audit summary with {len(violations)} violations from {file_name}")
+            print(f"[SUCCESS] Extracted audit summary with {len(violations)} violations from {file_name}")
             
             return True
             
         except Exception as e:
-            print(f"❌ Error extracting audit summary from Excel: {str(e)}")
+            print(f"[ERROR] Error extracting audit summary from Excel: {str(e)}")
             import traceback
             traceback.print_exc()
             return False
@@ -1715,7 +1715,7 @@ Data:
             return None
             
         except Exception as e:
-            print(f"❌ Error extracting violation from Excel row: {str(e)}")
+            print(f"[ERROR] Error extracting violation from Excel row: {str(e)}")
             return None
     
     def _extract_generic_data_from_excel(self, df, file_name):
@@ -1751,7 +1751,7 @@ Data:
             
             # Add to extracted data
             self.extracted_data['audit_summaries'].append(extracted_info)
-            print(f"✅ Extracted generic Excel data from {file_name}")
+            print(f"[SUCCESS] Extracted generic Excel data from {file_name}")
             
         except Exception as e:
             print(f"Error extracting generic Excel data: {str(e)}")
@@ -1785,7 +1785,7 @@ Data:
         
         # If no entries found, create sample data to ensure processing
         if not entries_found:
-            print(f"⚠️  No weekly summary data found in {file_name}, creating sample entry")
+            print(f"[WARNING] No weekly summary data found in {file_name}, creating sample entry")
             sample_data = {
                 'type': 'weekly_summary',
                 'file_name': file_name,
@@ -1800,7 +1800,7 @@ Data:
             }
             self.extracted_data['weekly_summaries'].append(sample_data)
         
-        print(f"✅ Processed weekly summary data from {file_name}")
+        print(f"[SUCCESS] Processed weekly summary data from {file_name}")
     
     def _extract_bol_from_excel(self, df, file_name):
         """Extract Bill of Lading data from Excel DataFrame"""
@@ -1831,7 +1831,7 @@ Data:
         
         # If no entries found, create sample data to ensure processing
         if not entries_found:
-            print(f"⚠️  No BOL data found in {file_name}, creating sample entry")
+            print(f"[WARNING] No BOL data found in {file_name}, creating sample entry")
             sample_data = {
                 'type': 'bill_of_lading',
                 'file_name': file_name,
@@ -1846,7 +1846,7 @@ Data:
             }
             self.extracted_data['bills_of_lading'].append(sample_data)
         
-        print(f"✅ Processed BOL data from {file_name}")
+        print(f"[SUCCESS] Processed BOL data from {file_name}")
     
     def _extract_duty_status(self, line):
         """Extract duty status from a line of text"""
@@ -2104,20 +2104,20 @@ Data:
     def _print_processing_summary(self):
         """Print a summary of file processing results"""
         print(f"\n{'='*60}")
-        print("📊 FILE PROCESSING SUMMARY")
+        print("[INFO] FILE PROCESSING SUMMARY")
         print(f"{'='*60}")
         print(f"Total files: {self.processing_stats['total_files']}")
-        print(f"✅ Successful extractions: {self.processing_stats['successful_extractions']}")
-        print(f"⚠️  Font errors handled: {self.processing_stats['font_errors_handled']}")
-        print(f"❌ Failed extractions: {self.processing_stats['failed_extractions']}")
+        print(f"[SUCCESS] Successful extractions: {self.processing_stats['successful_extractions']}")
+        print(f"[WARNING] Font errors handled: {self.processing_stats['font_errors_handled']}")
+        print(f"[ERROR] Failed extractions: {self.processing_stats['failed_extractions']}")
         
         if self.processing_stats['font_errors_handled'] > 0:
-            print(f"\n🔧 Font processing issues were automatically handled")
+            print(f"\n[INFO] Font processing issues were automatically handled")
             print(f"   - Used fallback text extraction methods")
             print(f"   - Files were processed despite font metadata issues")
         
         success_rate = (self.processing_stats['successful_extractions'] / self.processing_stats['total_files'] * 100) if self.processing_stats['total_files'] > 0 else 0
-        print(f"\n📈 Success Rate: {success_rate:.1f}%")
+        print(f"\n[INFO] Success Rate: {success_rate:.1f}%")
         print(f"{'='*60}")
     
     def get_processing_stats(self):

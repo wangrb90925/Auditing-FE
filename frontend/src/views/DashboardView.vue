@@ -357,17 +357,17 @@
                     <div
                       class="w-8 h-8 rounded-full flex items-center justify-center mr-2"
                       :class="
-                        audit.violations > 0
+                        getViolationCount(audit) > 0
                           ? 'bg-red-100 text-red-600'
                           : 'bg-green-100 text-green-600'
                       "
                     >
                       <span class="text-sm font-bold">{{
-                        audit.violations || 0
+                        getViolationCount(audit)
                       }}</span>
                     </div>
                     <span class="text-sm text-gray-600">{{
-                      audit.violations > 0 ? "violations" : "compliant"
+                      getViolationCount(audit) > 0 ? "violations" : "compliant"
                     }}</span>
                   </div>
                 </td>
@@ -640,12 +640,25 @@ const audits = computed(() => {
   return auditStore.audits || [];
 });
 
+const getViolationCount = (audit) => {
+  // Handle both old format (number) and new format (array)
+  if (Array.isArray(audit.violations)) {
+    return audit.violations.length;
+  } else if (Array.isArray(audit.consolidated_violations)) {
+    return audit.consolidated_violations.length;
+  } else if (typeof audit.violations === "number") {
+    return audit.violations;
+  } else {
+    return 0;
+  }
+};
+
 const totalViolations = computed(() => {
   if (!audits.value || !Array.isArray(audits.value)) {
     return 0;
   }
   return audits.value.reduce((total, audit) => {
-    return total + (audit.violations || 0);
+    return total + getViolationCount(audit);
   }, 0);
 });
 
@@ -710,7 +723,7 @@ const downloadReport = (auditId) => {
       audit.driverName,
       formatDriverType(audit.driverType),
       formatStatus(audit.status),
-      audit.violations || 0,
+      getViolationCount(audit),
       audit.summary?.complianceScore || "N/A",
       formatDate(audit.createdAt),
     ],

@@ -127,7 +127,7 @@ def start_server():
 
 def main():
     """Main startup function"""
-    print("🔍 AI Audit Engine Backend - Startup Check")
+    print("[STARTUP] AI Audit Engine Backend - Startup Check")
     print("=" * 50)
     
     # Change to backend directory
