@@ -630,7 +630,7 @@ watch(
       initializeData();
     }
     // If user logs out, no need to do anything - audits will be empty
-  },
+  }
 );
 
 // Initialize data when component mounts
@@ -667,7 +667,7 @@ const recentAudits = computed(() => {
     return [];
   }
   const sortedAudits = [...audits.value].sort(
-    (a, b) => new Date(b.createdAt) - new Date(a.createdAt),
+    (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
   );
   return sortedAudits.slice(0, 5);
 });

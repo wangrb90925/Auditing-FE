@@ -906,7 +906,7 @@ watch(
   () => userStore.isAuthenticated,
   (isAuthenticated) => {
     if (isAuthenticated) initializeData();
-  },
+  }
 );
 
 // Initialize data when component mounts
@@ -934,7 +934,7 @@ const auditToDelete = ref(null);
 
 // Pagination computed properties
 const totalPages = computed(() =>
-  Math.ceil(pagination.totalItems / pagination.itemsPerPage),
+  Math.ceil(pagination.totalItems / pagination.itemsPerPage)
 );
 
 const paginatedAudits = computed(() => {
@@ -944,14 +944,14 @@ const paginatedAudits = computed(() => {
 });
 
 const startItem = computed(
-  () => (pagination.currentPage - 1) * pagination.itemsPerPage + 1,
+  () => (pagination.currentPage - 1) * pagination.itemsPerPage + 1
 );
 
 const endItem = computed(() =>
   Math.min(
     pagination.currentPage * pagination.itemsPerPage,
-    pagination.totalItems,
-  ),
+    pagination.totalItems
+  )
 );
 
 // Watch for changes in filtered audits to update pagination
@@ -961,7 +961,7 @@ watch(
     pagination.totalItems = newAudits.length;
     pagination.currentPage = 1;
   },
-  { immediate: true },
+  { immediate: true }
 );
 
 // Pagination methods
@@ -1068,7 +1068,7 @@ const getViolationCount = (audit) => {
 const totalViolations = computed(() => {
   return filteredAudits.value.reduce(
     (sum, audit) => sum + getViolationCount(audit),
-    0,
+    0
   );
 });
 
@@ -1153,7 +1153,7 @@ const confirmDelete = async (audit) => {
   } catch (error) {
     console.error("Error deleting audit:", error);
     showErrorMessage(
-      `Failed to delete audit: ${error.message || "Unknown error"}`,
+      `Failed to delete audit: ${error.message || "Unknown error"}`
     );
   } finally {
     // Remove from deleting list

@@ -677,7 +677,7 @@ const initializeData = async () => {
       // Fallback to mock data
       systemStats.totalUsers = users.value.length;
       systemStats.activeUsers = users.value.filter(
-        (user) => user.isActive,
+        (user) => user.isActive
       ).length;
       systemStats.totalAudits = auditStore.audits.length;
       systemStats.systemHealth = 95;
@@ -712,7 +712,7 @@ const toggleUserStatus = async (user) => {
     } else {
       showAlert(
         `Failed to update user status: ${response.statusText}`,
-        "error",
+        "error"
       );
     }
   } catch (error) {

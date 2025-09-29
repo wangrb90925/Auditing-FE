@@ -798,7 +798,7 @@ const handleSubmit = async () => {
     console.log("Uploading files for audit:", newAudit.id);
     const uploadResult = await auditStore.uploadFiles(
       newAudit.id,
-      selectedFiles.value,
+      selectedFiles.value
     );
 
     if (!uploadResult.success) {
@@ -829,7 +829,7 @@ const handleSubmit = async () => {
     showSuccess(
       "Audit Completed Successfully",
       `Driver: ${formData.driverName}\nType: ${formData.driverType}\nCompliance Score: ${computedScore}%\nViolations Found: ${processResult.audit.violations || 0}`,
-      8000,
+      8000
     );
 
     // Redirect to audit detail view

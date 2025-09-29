@@ -411,7 +411,7 @@ const initializeProfile = () => {
 
         console.log(
           "📝 Profile form initialized from localStorage:",
-          profileForm,
+          profileForm
         );
       } else {
         console.log("❌ No user data found in localStorage");
@@ -594,10 +594,10 @@ const calculateUserStats = () => {
   const audits = auditStore.audits || [];
   userStats.totalAudits = audits.length;
   userStats.completedAudits = audits.filter(
-    (audit) => audit.status === "completed",
+    (audit) => audit.status === "completed"
   ).length;
   userStats.pendingAudits = audits.filter(
-    (audit) => audit.status === "pending",
+    (audit) => audit.status === "pending"
   ).length;
 
   console.log("📊 User stats calculated:", userStats);
@@ -618,7 +618,7 @@ watch(
       initializeProfile();
     }
   },
-  { immediate: true },
+  { immediate: true }
 );
 
 // Initialize data when component mounts

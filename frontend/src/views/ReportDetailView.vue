@@ -334,12 +334,12 @@ const downloadReport = () => {
 
     showSuccess(
       "Download Complete",
-      "Detailed report has been downloaded successfully.",
+      "Detailed report has been downloaded successfully."
     );
   } catch (error) {
     showError(
       "Download Failed",
-      "Failed to download report. Please try again.",
+      "Failed to download report. Please try again."
     );
   }
 };
@@ -377,7 +377,7 @@ const generateDetailedReportContent = () => {
   lines.push("Type,Count,Percentage,Severity");
   report.violations.forEach((violation) => {
     lines.push(
-      `${violation.type},${violation.count},${violation.percentage}%,${violation.severity}`,
+      `${violation.type},${violation.count},${violation.percentage}%,${violation.severity}`
     );
   });
   lines.push("");

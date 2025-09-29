@@ -10,7 +10,7 @@ class ApiService {
   // Get auth headers with token
   getAuthHeaders() {
     const token = localStorage.getItem(
-      import.meta.env.VITE_JWT_STORAGE_KEY || "access_token",
+      import.meta.env.VITE_JWT_STORAGE_KEY || "access_token"
     );
     return {
       "Content-Type": "application/json",
