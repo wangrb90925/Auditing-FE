@@ -79,8 +79,6 @@ class Audit(db.Model):
     
     def to_dict(self):
         """Convert audit to dictionary"""
-        violations_list = json.loads(self.violations_list) if self.violations_list else []
-        
         return {
             'id': self.id,
             'driverName': self.driver_name,
@@ -89,8 +87,7 @@ class Audit(db.Model):
             'createdAt': self.created_at.isoformat() if self.created_at else None,
             'updatedAt': self.updated_at.isoformat() if self.updated_at else None,
             'files': [file.to_dict() for file in self.files],
-            'violations': violations_list,  # Return actual violations array
-            'consolidated_violations': [],  # Empty for now, can be populated later
+            'violations': self.violations,
             'summary': {
                 'complianceScore': self.compliance_score,
                 'severity': self.severity,
@@ -99,7 +96,7 @@ class Audit(db.Model):
                 'formViolations': self.form_violations,
                 'falsificationViolations': self.falsification_violations
             },
-            'violationsList': violations_list,  # Keep for backward compatibility
+            'violationsList': json.loads(self.violations_list) if self.violations_list else [],
             'processingLog': json.loads(self.processing_log) if self.processing_log else []
         }
     
