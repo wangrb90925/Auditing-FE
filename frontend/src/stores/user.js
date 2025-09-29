@@ -10,7 +10,7 @@ export const useUserStore = defineStore("user", () => {
   const isAuthenticated = computed(() => !!accessToken.value);
   const isAdmin = computed(() => user.value?.role === "admin");
   const isAuditor = computed(
-    () => user.value?.role === "auditor" || user.value?.role === "admin"
+    () => user.value?.role === "auditor" || user.value?.role === "admin",
   );
 
   // Role-based permissions

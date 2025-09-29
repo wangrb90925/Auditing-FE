@@ -596,7 +596,7 @@ const generateReport = async () => {
 
     showSuccess(
       "Report Generated",
-      `${reportConfig.value.type} report has been generated successfully!`
+      `${reportConfig.value.type} report has been generated successfully!`,
     );
 
     // Add to recent reports
@@ -645,12 +645,12 @@ const downloadReport = (reportId) => {
 
     showSuccess(
       "Download Complete",
-      "Report has been downloaded successfully."
+      "Report has been downloaded successfully.",
     );
   } catch (error) {
     showError(
       "Download Failed",
-      "Failed to download report. Please try again."
+      "Failed to download report. Please try again.",
     );
   }
 };
@@ -686,7 +686,7 @@ const exportToPDF = () => {
 
     showSuccess(
       "Export Complete",
-      "Reports summary has been exported successfully."
+      "Reports summary has been exported successfully.",
     );
   } catch (error) {
     showError("Export Failed", "Failed to export reports. Please try again.");
@@ -758,12 +758,12 @@ const exportAllToCSV = () => {
 
     showSuccess(
       "Export Complete",
-      "All recent reports have been exported successfully."
+      "All recent reports have been exported successfully.",
     );
   } catch (error) {
     showError(
       "Export Failed",
-      "Failed to export all reports. Please try again."
+      "Failed to export all reports. Please try again.",
     );
   }
 };

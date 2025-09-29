@@ -11,15 +11,15 @@ export const useAuditStore = defineStore("audit", () => {
 
   // Computed properties
   const completedAudits = computed(() =>
-    audits.value.filter((audit) => audit.status === "completed")
+    audits.value.filter((audit) => audit.status === "completed"),
   );
 
   const pendingAudits = computed(() =>
-    audits.value.filter((audit) => audit.status === "pending")
+    audits.value.filter((audit) => audit.status === "pending"),
   );
 
   const processingAudits = computed(() =>
-    audits.value.filter((audit) => audit.status === "processing")
+    audits.value.filter((audit) => audit.status === "processing"),
   );
 
   // Create new audit
@@ -98,7 +98,7 @@ export const useAuditStore = defineStore("audit", () => {
 
       // Update the audit in the list
       const auditIndex = audits.value.findIndex(
-        (audit) => audit.id === auditId
+        (audit) => audit.id === auditId,
       );
       if (auditIndex !== -1) {
         audits.value[auditIndex].files = [
@@ -134,7 +134,7 @@ export const useAuditStore = defineStore("audit", () => {
 
       // Update the audit in the list
       const auditIndex = audits.value.findIndex(
-        (audit) => audit.id === auditId
+        (audit) => audit.id === auditId,
       );
       if (auditIndex !== -1) {
         audits.value[auditIndex] = response;
@@ -240,7 +240,7 @@ export const useAuditStore = defineStore("audit", () => {
 
       // Remove the audit from the list
       const auditIndex = audits.value.findIndex(
-        (audit) => audit.id === auditId
+        (audit) => audit.id === auditId,
       );
       if (auditIndex !== -1) {
         audits.value.splice(auditIndex, 1);
