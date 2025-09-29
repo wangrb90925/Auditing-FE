@@ -68,7 +68,7 @@ class FMCSARules:
             print("[FALLBACK] Using fallback logs for complete date range analysis")
             # Use fallback logs for analysis
         elif ai_enhanced_logs and self.openai_service.is_available():
-            print("🤖 Using AI-enhanced compliance analysis")
+            print("[AI] Using AI-enhanced compliance analysis")
             self._analyze_compliance_with_ai(extracted_data, driver_type)
         else:
             print("[TRADITIONAL] Using traditional compliance analysis")
@@ -1152,7 +1152,7 @@ class FMCSARules:
     def _analyze_compliance_with_ai(self, extracted_data, driver_type):
         """Use AI to analyze compliance with enhanced accuracy"""
         try:
-            print("🤖 Running AI-powered compliance analysis...")
+            print("[AI] Running AI-powered compliance analysis...")
             
             # Use OpenAI service for comprehensive compliance analysis
             ai_result = self.openai_service.analyze_fmcsa_compliance(extracted_data, driver_type)
@@ -1804,8 +1804,8 @@ class FMCSARules:
         # Check if any driving session exceeded 8 hours without proper break
         total_driving_hours = sum(session['duration'] for session in driving_sessions)
         
-        print(f"      📊 Total driving hours: {total_driving_hours}")
-        print(f"      📊 Driving sessions: {len(driving_sessions)}")
+        print(f"      [INFO] Total driving hours: {total_driving_hours}")
+        print(f"      [INFO] Driving sessions: {len(driving_sessions)}")
         
         if total_driving_hours >= 8:
             # Check for 30-minute break between sessions or after 8 hours
@@ -1822,7 +1822,7 @@ class FMCSARules:
                             break
             
             if not found_proper_break:
-                print(f"      ❌ 30-minute break violation detected!")
+                print(f"      [VIOLATION] 30-minute break violation detected!")
                 self._add_violation({
                     'date': date,
                     'type': 'HOS_BREAK_VIOLATION',
@@ -1849,10 +1849,10 @@ class FMCSARules:
                 if status == 'driving':
                     driving_hours += 1  # Simplified - assume 1 hour per entry
         
-        print(f"      📊 Total driving hours: {driving_hours}")
+        print(f"      [INFO] Total driving hours: {driving_hours}")
         
         if driving_hours > 11:
-            print(f"      ❌ 11-hour driving violation detected!")
+            print(f"      [VIOLATION] 11-hour driving violation detected!")
             self._add_violation({
                 'date': date,
                 'type': 'HOS_11_HOUR_DRIVING_VIOLATION',
@@ -2075,10 +2075,10 @@ class FMCSARules:
                 if status in ['driving', 'on_duty_not_driving']:
                     on_duty_hours += 1  # Simplified - assume 1 hour per entry
         
-        print(f"      📊 Total on-duty hours: {on_duty_hours}")
+        print(f"      [INFO] Total on-duty hours: {on_duty_hours}")
         
         if on_duty_hours > 14:
-            print(f"      ❌ 14-hour window violation detected!")
+            print(f"      [VIOLATION] 14-hour window violation detected!")
             self._add_violation({
                 'date': date,
                 'type': 'HOS_14_HOUR_WINDOW_VIOLATION',
@@ -2130,7 +2130,7 @@ class FMCSARules:
                     break
         
         if has_mileage_change and not has_driving_time:
-            print(f"      ❌ Distance/mileage violation detected!")
+            print(f"      [VIOLATION] Distance/mileage violation detected!")
             self._add_violation({
                 'date': date,
                 'type': 'DISTANCE_MILEAGE_VIOLATION',
