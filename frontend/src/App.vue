@@ -155,9 +155,6 @@
 
     <!-- Alert Container -->
     <AlertContainer />
-    
-    <!-- Debug Panel (only in development) -->
-    <DebugPanel v-if="import.meta.env.DEV" />
   </div>
 </template>
 
@@ -167,7 +164,6 @@ import { useUserStore } from "./stores/user";
 import Button from "@/components/ui/button.vue";
 import UserProfile from "@/components/UserProfile.vue";
 import AlertContainer from "@/components/AlertContainer.vue";
-import DebugPanel from "@/components/DebugPanel.vue";
 import {
   LogoIcon,
   DashboardIcon,
