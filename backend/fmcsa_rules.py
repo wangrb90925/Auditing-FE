@@ -1343,6 +1343,28 @@ class FMCSARules:
                     'section': '395.8(e)'
                 })
     
+    def _calculate_on_duty_hours_for_day(self, day_entries):
+        """Calculate total on-duty hours for a single day"""
+        total_hours = 0
+        
+        for entry in day_entries:
+            duty_statuses = entry.get('duty_status', [])
+            for status_info in duty_statuses:
+                status = status_info.get('status', '').lower()
+                if status in ['driving', 'on_duty_not_driving']:
+                    # Calculate actual duration instead of assuming 1 hour
+                    start_time = status_info.get('start_time', '')
+                    end_time = status_info.get('end_time', '')
+                    
+                    if start_time and end_time:
+                        duration = self._calculate_duration(start_time, end_time)
+                        total_hours += duration
+                    else:
+                        # Fallback: assume 1 hour if no specific times
+                        total_hours += 1
+        
+        return total_hours
+
     def _calculate_8_day_hours(self, entries_by_date, end_date):
         """Calculate total hours for 8-day period ending on given date"""
         all_dates = sorted(entries_by_date.keys())
@@ -1455,20 +1477,13 @@ class FMCSARules:
     
     def _check_14_hour_window_generic(self, date, entries):
         """Generic 14-hour window violation detection"""
-        on_duty_hours = 0
-        
-        for entry in entries:
-            duty_statuses = entry.get('duty_status', [])
-            for status_info in duty_statuses:
-                status = status_info.get('status', '').lower()
-                if status in ['driving', 'on_duty_not_driving']:
-                    on_duty_hours += 1  # Simplified - assume 1 hour per entry
+        on_duty_hours = self._calculate_on_duty_hours_for_day(entries)
         
         if on_duty_hours > 14:
             self._add_violation({
                 'date': date,
                 'type': 'HOS_14_HOUR_WINDOW_VIOLATION',
-                'description': f'Exceeded 14-hour on-duty window: {on_duty_hours} hours on {date}',
+                'description': f'Exceeded 14-hour on-duty window: {on_duty_hours:.1f} hours on {date}',
                 'severity': 'critical',
                 'penalty': '$2,750',
                 'section': '395.3(a)(2)'
@@ -1491,15 +1506,7 @@ class FMCSARules:
             
             for check_date in dates_to_check:
                 day_entries = all_entries_by_date[check_date]
-                on_duty_hours = 0
-                
-                for entry in day_entries:
-                    duty_statuses = entry.get('duty_status', [])
-                    for status_info in duty_statuses:
-                        status = status_info.get('status', '').lower()
-                        if status in ['driving', 'on_duty_not_driving']:
-                            on_duty_hours += 1  # Simplified - assume 1 hour per entry
-                
+                on_duty_hours = self._calculate_on_duty_hours_for_day(day_entries)
                 total_on_duty_hours += on_duty_hours
                 days_checked += 1
         
