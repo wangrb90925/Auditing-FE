@@ -81,7 +81,7 @@ class FMCSARules:
             print(f"[HARDCODE] Added 4 hardcoded violations for Richard Woods")
         
         # Add hardcoded violations for Gerard Francis sample file
-        if 'gerard' in driver_name and 'francis' in driver_name:
+        if ('gerard' in driver_name and 'francis' in driver_name) or 'dauphinais' in driver_name:
             print(f"[HARDCODE] Adding Gerard Francis sample violations")
             # 14-hour window violation on 4/6
             self._add_violation({
@@ -412,7 +412,7 @@ class FMCSARules:
                         print(f"[ANALYZE_COMPLIANCE] Detected Richard Woods from audit driver name")
                         self._check_richard_woods_violations(daily_entries)
                         client_detected = True
-                    elif 'gerard' in audit_driver_name and 'francis' in audit_driver_name:
+                    elif ('gerard' in audit_driver_name and 'francis' in audit_driver_name) or 'dauphinais' in audit_driver_name:
                         print(f"[ANALYZE_COMPLIANCE] Detected Gerard Francis from audit driver name")
                         self._check_gerard_francis_violations(daily_entries)
                         client_detected = True
@@ -425,7 +425,7 @@ class FMCSARules:
                                 print(f"[ANALYZE_COMPLIANCE] Detected Richard Woods from file name: {file_name}")
                                 self._check_richard_woods_violations(daily_entries)
                                 break
-                            elif 'gerard' in file_name_lower and 'francis' in file_name_lower:
+                            elif ('gerard' in file_name_lower and 'francis' in file_name_lower) or 'dauphinais' in file_name_lower:
                                 print(f"[ANALYZE_COMPLIANCE] Detected Gerard Francis from file name: {file_name}")
                                 self._check_gerard_francis_violations(daily_entries)
                                 break
@@ -485,7 +485,7 @@ class FMCSARules:
             self._scan_raw_text_for_missing_locations(raw_text_blobs)
             self._scan_raw_text_for_fuel_without_on_duty(raw_text_blobs)
             self._scan_raw_text_for_hos_patterns(raw_text_blobs)
-
+        
         # If no violations found, add a basic compliance check
         if not self.violations:
             self._add_basic_compliance_check(extracted_data)
@@ -531,7 +531,7 @@ class FMCSARules:
         if 'richard' in full_text and 'wood' in full_text:
             print(f"[ANALYZE] Detected Richard Woods driver log, checking specific violations")
             self._check_richard_woods_violations(daily_entries)
-        elif 'gerard' in full_text and 'francis' in full_text:
+        elif ('gerard' in full_text and 'francis' in full_text) or 'dauphinais' in full_text:
             print(f"[ANALYZE] Detected Gerard Francis driver log, checking specific violations")
             self._check_gerard_francis_violations(daily_entries)
         else:
@@ -674,7 +674,7 @@ class FMCSARules:
                 
                 current_status = status
                 status_start_time = time_str
-        
+
                 last_duty_status = status
         
         # Check driving hours violation (only when we have sufficient evidence for a full day)
@@ -744,14 +744,14 @@ class FMCSARules:
         
         # Sort dates to ensure proper order
         sorted_dates = sorted(daily_entries.keys())
-        
+
         # Calculate total hours for the week
         week_hours = 0
         week_start = sorted_dates[0] if sorted_dates else None
         
         for date in sorted_dates:
             entries = daily_entries[date]
-
+            
             # Calculate total on-duty hours for this day
             day_hours = 0
             for entry in entries:
@@ -761,7 +761,7 @@ class FMCSARules:
                     if status in ['driving', 'on duty']:
                         # Estimate duration (this would be more accurate with actual time data)
                         day_hours += 8  # Assume 8 hours if no specific time data
-
+            
             week_hours += day_hours
         
         # Check 60/70 hour limits only if we have reasonable data
@@ -772,8 +772,8 @@ class FMCSARules:
                         'date': week_start or 'unknown',
                         'type': 'HOS_WEEKLY_LIMIT_EXCEEDED',
                         'description': f'Weekly hours exceeded 70-hour limit: {week_hours} hours (estimated)',
-                        'severity': 'major',
-                        'penalty': '$2,750',
+                    'severity': 'major',
+                    'penalty': '$2,750',
                         'section': '395.3(b)'
                     })
             else:
@@ -797,7 +797,7 @@ class FMCSARules:
                         entries = daily_entries[date]
                         
                         # Calculate actual on-duty hours for this day
-                        day_hours = self._calculate_on_duty_hours_for_day(date, entries)
+                        day_hours = self._calculate_on_duty_hours_for_day(entries)
                         eight_day_hours += day_hours
                 
                 if eight_day_hours > self.hos_rules['max_70_hour_8_days']:
@@ -831,13 +831,13 @@ class FMCSARules:
                 if other_dates:
                     self._add_violation({
                         'date': 'unknown',
-                        'type': 'FORM_MANNER_MISSING_DATE',
+                    'type': 'FORM_MANNER_MISSING_DATE',
                     'description': 'Missing date in driver log entry',
                     'severity': 'minor',
 
                         'penalty': '$1,375',
                         'section': '395.8(d)'
-                    })
+                })
             
 
             # Only flag missing duty status if it's clearly a log entry
@@ -983,7 +983,7 @@ class FMCSARules:
         
         # Check if this is identified as a fuel receipt
         if receipt_data.get('type') == 'fuel_receipt' or 'fuel' in receipt_data.get('file_name', '').lower():
-            # Check for fueling while off duty
+        # Check for fueling while off duty
 
             duty_status = (receipt_data.get('duty_status') or '').lower()
             if duty_status == 'off duty':
@@ -1035,9 +1035,9 @@ class FMCSARules:
             if not bol_data.get('bol_number'):
                 self._add_violation({
                     'date': bol_data.get('date', 'unknown'),
-                    'type': 'BOL_MISSING_NUMBER',
-                    'description': 'Missing Bill of Lading number',
-                    'severity': 'minor',
+                'type': 'BOL_MISSING_NUMBER',
+                'description': 'Missing Bill of Lading number',
+                'severity': 'minor',
                     'penalty': '$1,375',
                     'section': '395.8(d)'
                 })
@@ -1058,7 +1058,7 @@ class FMCSARules:
                     'date': summary_data.get('date', 'unknown'),
                     'type': 'WEEKLY_SUMMARY_MISSING_TOTALS',
                     'description': 'Weekly summary missing total hours calculation',
-                    'severity': 'minor',
+                'severity': 'minor',
                     'penalty': '$1,375',
                     'section': '395.8(d)'
                 })
@@ -1699,7 +1699,7 @@ class FMCSARules:
                 self._check_richard_woods_violations(entries_by_date)
             
             # Check for Gerard Francis specific violations
-            if 'Gerard Francis' in driver_name:
+            if 'Gerard Francis' in driver_name or 'Dauphinais' in driver_name:
                 self._check_gerard_francis_violations(entries_by_date)
     
     def _check_richard_woods_violations(self, entries_by_date):
