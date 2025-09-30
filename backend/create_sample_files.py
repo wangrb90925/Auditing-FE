@@ -56,7 +56,7 @@ def create_violation_png(filename, content_type, violations):
     
     # Save image
     image.save(filename)
-    print(f"✅ Created PNG: {filename}")
+    print(f"[SUCCESS] Created PNG: {filename}")
 
 def create_violation_excel(filename, content_type, violations):
     """Create an Excel file with violation data"""
@@ -146,7 +146,7 @@ def create_violation_excel(filename, content_type, violations):
         for sheet_name, df in sheets.items():
             df.to_excel(writer, sheet_name=sheet_name, index=False)
     
-    print(f"✅ Created Excel: {filename}")
+    print(f"[SUCCESS] Created Excel: {filename}")
 
 def main():
     """Create sample PNG and Excel files with violations"""

@@ -160,14 +160,14 @@ def create_default_admin():
             )
             
             if admin_user:
-                print("✅ Default admin user created:")
+                print("[SUCCESS] Default admin user created:")
                 print("   Username: admin")
                 print("   Password: admin123")
                 print("   Please change the password after first login!")
             else:
-                print(f"❌ Failed to create default admin: {error}")
+                print(f"[ERROR] Failed to create default admin: {error}")
                 
     except Exception as e:
-        print(f"❌ Error creating default admin: {e}")
+        print(f"[ERROR] Error creating default admin: {e}")
 
 
