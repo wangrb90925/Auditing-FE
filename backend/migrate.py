@@ -14,7 +14,7 @@ def run_migrations():
         # Create all tables
         db.create_all()
         
-        print("✅ Database migrations completed successfully!")
+        print("[SUCCESS] Database migrations completed successfully!")
 
 if __name__ == "__main__":
     run_migrations()

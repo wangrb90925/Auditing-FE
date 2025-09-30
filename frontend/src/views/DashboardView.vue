@@ -581,7 +581,7 @@
 </template>
 
 <script setup>
-import { computed, watch } from "vue";
+import { computed, watch, onMounted } from "vue";
 import { useAuditStore } from "../stores/audit";
 import { useUserStore } from "../stores/user";
 import Button from "@/components/ui/button.vue";
@@ -630,11 +630,13 @@ watch(
       initializeData();
     }
     // If user logs out, no need to do anything - audits will be empty
-  },
+  }
 );
 
 // Initialize data when component mounts
-initializeData();
+onMounted(() => {
+  initializeData();
+});
 
 const audits = computed(() => {
   return auditStore.audits || [];
@@ -667,7 +669,7 @@ const recentAudits = computed(() => {
     return [];
   }
   const sortedAudits = [...audits.value].sort(
-    (a, b) => new Date(b.createdAt) - new Date(a.createdAt),
+    (a, b) => new Date(b.createdAt) - new Date(a.createdAt)
   );
   return sortedAudits.slice(0, 5);
 });

@@ -26,6 +26,10 @@ class AuditEngine:
             print(f"Processing {len(files)} files for driver: {driver_name}")
             extracted_data = self.file_processor.process_files(files)
             
+            # Add driver name and file info to extracted_data for client-specific detection
+            extracted_data['driver_name'] = driver_name
+            extracted_data['all_files'] = files
+            
             # Step 2: Apply FMCSA compliance rules
             print("Applying FMCSA compliance rules...")
             violations = self.fmcsa_rules.analyze_compliance(extracted_data, driver_type)

@@ -28,15 +28,15 @@ def create_database():
         if not exists:
             print("Creating database 'audit_db'...")
             cursor.execute("CREATE DATABASE audit_db")
-            print("✅ Database 'audit_db' created successfully")
+            print("[SUCCESS] Database 'audit_db' created successfully")
         else:
-            print("✅ Database 'audit_db' already exists")
+            print("[SUCCESS] Database 'audit_db' already exists")
         
         cursor.close()
         conn.close()
         
     except psycopg2.Error as e:
-        print(f"❌ Error creating database: {e}")
+        print(f"[ERROR] Error creating database: {e}")
         sys.exit(1)
 
 def test_connection():
@@ -52,12 +52,12 @@ def test_connection():
         cursor = conn.cursor()
         cursor.execute("SELECT version();")
         version = cursor.fetchone()
-        print(f"✅ Connected to PostgreSQL: {version[0]}")
+        print(f"[SUCCESS] Connected to PostgreSQL: {version[0]}")
         cursor.close()
         conn.close()
         return True
     except psycopg2.Error as e:
-        print(f"❌ Error connecting to database: {e}")
+        print(f"[ERROR] Error connecting to database: {e}")
         return False
 
 def main():
@@ -70,12 +70,12 @@ def main():
     
     # Test connection
     if test_connection():
-        print("\n✅ Database setup completed successfully!")
+        print("\n[SUCCESS] Database setup completed successfully!")
         print("\nNext steps:")
         print("1. Run the Flask application: python app.py")
         print("2. The database tables will be created automatically")
     else:
-        print("\n❌ Database setup failed!")
+        print("\n[ERROR] Database setup failed!")
         sys.exit(1)
 
 if __name__ == "__main__":
