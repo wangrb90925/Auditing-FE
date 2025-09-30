@@ -472,6 +472,8 @@ const loadAudit = async () => {
         violations: audit.value.violations,
         violationsList: audit.value.violationsList?.length || 0,
       });
+      console.log("🔍 Full audit object:", audit.value);
+      console.log("🔍 ViolationsList:", audit.value.violationsList);
     } else {
       error.value = result.error || "Failed to load audit";
     }
@@ -530,10 +532,13 @@ const formatViolationType = (type) => {
 
 const getViolationVariant = (severity) => {
   switch (severity?.toLowerCase()) {
+    case "critical":
     case "high":
       return "destructive";
+    case "major":
     case "medium":
       return "default";
+    case "minor":
     case "low":
       return "secondary";
     default:
@@ -543,10 +548,13 @@ const getViolationVariant = (severity) => {
 
 const getViolationBorderClass = (severity) => {
   switch (severity?.toLowerCase()) {
+    case "critical":
     case "high":
       return "border-red-200 bg-red-50/50";
+    case "major":
     case "medium":
       return "border-amber-200 bg-amber-50/50";
+    case "minor":
     case "low":
       return "border-blue-200 bg-blue-50/50";
     default:

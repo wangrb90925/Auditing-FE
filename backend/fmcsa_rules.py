@@ -439,6 +439,36 @@ class FMCSARules:
         # Additional heuristic detection for client-reported violations
         self._detect_client_reported_violations(extracted_data)
         
+        # Run rule-based violation checks for all files (including sample files)
+        # This allows both hardcoded violations and actual rule detection
+        
+        # Extract daily entries for rule checking
+        daily_entries = {}
+        for log_data in self.driver_logs_data:
+            entries = log_data.get('entries', [])
+            for entry in entries:
+                date = entry.get('date', '')
+                if date:
+                    if date not in daily_entries:
+                        daily_entries[date] = []
+                    daily_entries[date].append(entry)
+        
+        # Extract fuel receipts
+        fuel_receipts = extracted_data.get('fuel_receipts', [])
+        
+        # Run rule-based checks
+        if daily_entries:
+            print(f"[RULE_CHECK] Running rule-based violation detection")
+            
+            # Check 70/8 cycle rule
+            self._check_70_8_cycle_rule(daily_entries)
+            
+            # Check fuel transaction compliance
+            self._check_fuel_transaction_compliance_rule(daily_entries, fuel_receipts)
+            
+            # Check PC misuse
+            self._check_personal_conveyance_misuse_rule(daily_entries)
+        
         # Only run generic violation checks for non-sample files
         # Sample files should only show their specific hardcoded violations
         if not self._is_sample_file(driver_name):
@@ -2497,3 +2527,320 @@ class FMCSARules:
                         'penalty': '$1,375',
                         'section': '395.8(e)'
                     })
+
+    def _check_70_8_cycle_rule(self, daily_entries):
+        """
+        Check for 70-hour/8-day cycle rule violations
+        
+        FMCSA Rule 395.3(b)(1): A driver may not drive after having been on duty 
+        more than 70 hours in any period of 8 consecutive days.
+        """
+        print(f"[RULE_CHECK] Checking 70-hour/8-day cycle rule")
+        
+        if not daily_entries or len(daily_entries) < 8:
+            print(f"[RULE_CHECK] Insufficient data for 70/8 cycle check (need 8+ days)")
+            return
+        
+        # Sort entries by date
+        sorted_entries = sorted(daily_entries.items(), key=lambda x: self._parse_date(x[0]))
+        
+        # Check every 8-day window
+        for i in range(len(sorted_entries) - 7):
+            eight_day_hours = 0
+            window_dates = []
+            
+            # Calculate total on-duty hours for this 8-day window
+            for j in range(i, i + 8):
+                if j < len(sorted_entries):
+                    date, entries = sorted_entries[j]
+                    window_dates.append(date)
+                    
+                    # Calculate on-duty hours for this day
+                    day_hours = self._calculate_daily_on_duty_hours(entries)
+                    eight_day_hours += day_hours
+            
+            # Check if 70-hour limit is exceeded
+            if eight_day_hours > self.hos_rules['max_70_hour_8_days']:
+                violation_date = window_dates[-1]  # Last date in the window
+                print(f"[VIOLATION] 70/8 cycle rule violated: {eight_day_hours} hours in 8 days ending {violation_date}")
+                
+                self._add_violation({
+                    'date': violation_date,
+                    'type': 'HOS_70_HOUR_8_DAY_VIOLATION',
+                    'description': f'70/8 cycle rule violation - {eight_day_hours} hours in 8 consecutive days (limit: 70)',
+                    'severity': 'critical',
+                    'penalty': '$2,750',
+                    'section': '395.3(b)(1)',
+                    'details': {
+                        'total_hours': eight_day_hours,
+                        'limit': 70,
+                        'window_dates': window_dates
+                    }
+                })
+            else:
+                print(f"[OK] 70/8 cycle rule compliant: {eight_day_hours} hours in 8 days")
+
+    def _check_fuel_transaction_compliance_rule(self, daily_entries, fuel_receipts):
+        """
+        Check for fuel transaction compliance violations
+        
+        FMCSA Rule: Fuel transactions must have corresponding on-duty time
+        """
+        print(f"[RULE_CHECK] Checking fuel transaction compliance")
+        
+        if not fuel_receipts:
+            print(f"[RULE_CHECK] No fuel receipts to check")
+            return
+        
+        # Process each fuel receipt
+        for fuel_receipt in fuel_receipts:
+            fuel_date = fuel_receipt.get('date', '')
+            fuel_time = fuel_receipt.get('time', '')
+            fuel_location = fuel_receipt.get('location', '')
+            
+            if not fuel_date:
+                continue
+            
+            # Find corresponding driver log entry for this date
+            matching_entry = None
+            for date, entries in daily_entries.items():
+                if self._dates_match(date, fuel_date):
+                    matching_entry = entries
+                    break
+            
+            if not matching_entry:
+                print(f"[WARNING] No driver log entry found for fuel receipt date: {fuel_date}")
+                continue
+            
+            # Check if there's on-duty time around the fuel transaction time
+            has_on_duty_time = self._check_on_duty_time_around_fuel_transaction(
+                matching_entry, fuel_time, fuel_location
+            )
+            
+            if not has_on_duty_time:
+                print(f"[VIOLATION] Fuel transaction without on-duty time: {fuel_date} at {fuel_time}")
+                
+                self._add_violation({
+                    'date': fuel_date,
+                    'type': 'FUEL_WITHOUT_ON_DUTY_TIME',
+                    'description': f'Fuel transaction without corresponding on-duty time on {fuel_date} at {fuel_time}',
+                    'severity': 'major',
+                    'penalty': '$2,750',
+                    'section': '395.2',
+                    'details': {
+                        'fuel_time': fuel_time,
+                        'fuel_location': fuel_location
+                    }
+                })
+            else:
+                print(f"[OK] Fuel transaction compliant: {fuel_date} at {fuel_time}")
+
+    def _check_personal_conveyance_misuse_rule(self, daily_entries):
+        """
+        Check for Personal Conveyance (PC) misuse violations
+        
+        FMCSA Rule: PC cannot be used for commercial purposes or to extend driving time
+        """
+        print(f"[RULE_CHECK] Checking Personal Conveyance misuse")
+        
+        for date, entries in daily_entries.items():
+            pc_violations = self._analyze_pc_usage_for_date(date, entries)
+            
+            for violation in pc_violations:
+                self._add_violation(violation)
+
+    def _calculate_daily_on_duty_hours(self, entries):
+        """Calculate total on-duty hours for a single day"""
+        total_hours = 0
+        
+        for entry in entries:
+            duty_statuses = entry.get('duty_status', [])
+            
+            for status_info in duty_statuses:
+                status = status_info.get('status', '').lower()
+                time_str = status_info.get('time', '')
+                
+                # Only count on-duty and driving time
+                if status in ['on duty', 'driving', 'on_duty_not_driving']:
+                    # Parse time and calculate duration
+                    hours = self._parse_time_duration(time_str)
+                    total_hours += hours
+        
+        return total_hours
+
+    def _check_on_duty_time_around_fuel_transaction(self, entries, fuel_time, fuel_location):
+        """Check if there's on-duty time around a fuel transaction"""
+        fuel_time_obj = self._parse_time(fuel_time)
+        if not fuel_time_obj:
+            return False
+        
+        # Look for on-duty time within 2 hours of fuel transaction
+        time_window = timedelta(hours=2)
+        
+        for entry in entries:
+            duty_statuses = entry.get('duty_status', [])
+            
+            for status_info in duty_statuses:
+                status = status_info.get('status', '').lower()
+                time_str = status_info.get('time', '')
+                location = status_info.get('location', '')
+                
+                if status in ['on duty', 'driving', 'on_duty_not_driving']:
+                    entry_time_obj = self._parse_time(time_str)
+                    if entry_time_obj:
+                        time_diff = abs((fuel_time_obj - entry_time_obj).total_seconds() / 3600)
+                        
+                        # Check if on-duty time is within 2 hours and location matches
+                        if time_diff <= 2 and self._locations_match(fuel_location, location):
+                            return True
+        
+        return False
+
+    def _analyze_pc_usage_for_date(self, date, entries):
+        """Analyze PC usage for a specific date and return violations"""
+        violations = []
+        pc_entries = []
+        
+        # Find all PC entries for this date
+        for entry in entries:
+            duty_statuses = entry.get('duty_status', [])
+            
+            for status_info in duty_statuses:
+                status = status_info.get('status', '').lower()
+                remarks = status_info.get('remarks', '').lower()
+                
+                if 'pc' in remarks or 'personal conveyance' in remarks:
+                    pc_entries.append({
+                        'time': status_info.get('time', ''),
+                        'location': status_info.get('location', ''),
+                        'remarks': remarks,
+                        'status': status
+                    })
+        
+        # Check for PC misuse patterns
+        for pc_entry in pc_entries:
+            # Check if PC is used during commercial driving
+            if 'driving' in pc_entry['status'] and 'pc' in pc_entry['remarks']:
+                violations.append({
+                    'date': date,
+                    'type': 'PERSONAL_CONVEYANCE_MISUSE',
+                    'description': f'Misuse of Personal Conveyance (PC) during commercial driving on {date}',
+                    'severity': 'major',
+                    'penalty': '$2,750',
+                    'section': '395.8(e)',
+                    'details': {
+                        'time': pc_entry['time'],
+                        'location': pc_entry['location'],
+                        'remarks': pc_entry['remarks']
+                    }
+                })
+            
+            # Check if PC is used to extend driving time
+            if self._pc_extends_driving_time(pc_entry, entries):
+                violations.append({
+                    'date': date,
+                    'type': 'PERSONAL_CONVEYANCE_MISUSE',
+                    'description': f'Misuse of Personal Conveyance (PC) to extend driving time on {date}',
+                    'severity': 'major',
+                    'penalty': '$2,750',
+                    'section': '395.8(e)',
+                    'details': {
+                        'time': pc_entry['time'],
+                        'location': pc_entry['location'],
+                        'remarks': pc_entry['remarks']
+                    }
+                })
+        
+        return violations
+
+    def _pc_extends_driving_time(self, pc_entry, entries):
+        """Check if PC usage extends driving time beyond limits"""
+        # This is a simplified check - in reality, you'd need to track
+        # total driving time and see if PC is used to "reset" or extend it
+        pc_time = self._parse_time(pc_entry['time'])
+        if not pc_time:
+            return False
+        
+        # Look for driving time before and after PC usage
+        driving_before_pc = False
+        driving_after_pc = False
+        
+        for entry in entries:
+            duty_statuses = entry.get('duty_status', [])
+            
+            for status_info in duty_statuses:
+                status = status_info.get('status', '').lower()
+                time_str = status_info.get('time', '')
+                entry_time = self._parse_time(time_str)
+                
+                if entry_time:
+                    if entry_time < pc_time and status == 'driving':
+                        driving_before_pc = True
+                    elif entry_time > pc_time and status == 'driving':
+                        driving_after_pc = True
+        
+        # If there's driving both before and after PC, it might be misuse
+        return driving_before_pc and driving_after_pc
+
+    def _parse_date(self, date_str):
+        """Parse date string and return datetime object for sorting"""
+        try:
+            # Handle various date formats
+            if '/' in date_str:
+                parts = date_str.split('/')
+                if len(parts) == 2:  # M/D format
+                    month, day = parts
+                    return datetime(2024, int(month), int(day))
+                elif len(parts) == 3:  # M/D/Y format
+                    month, day, year = parts
+                    return datetime(int(year), int(month), int(day))
+            elif '-' in date_str:
+                return datetime.strptime(date_str, '%Y-%m-%d')
+        except (ValueError, TypeError):
+            pass
+        
+        return datetime(2024, 1, 1)  # Default fallback
+
+    def _parse_time(self, time_str):
+        """Parse time string and return datetime object"""
+        try:
+            if ':' in time_str:
+                hour, minute = time_str.split(':')
+                return datetime(2024, 1, 1, int(hour), int(minute))
+        except (ValueError, TypeError):
+            pass
+        
+        return None
+
+    def _parse_time_duration(self, time_str):
+        """Parse time duration and return hours as float"""
+        try:
+            if ':' in time_str:
+                parts = time_str.split(':')
+                if len(parts) == 2:
+                    hours, minutes = parts
+                    return float(hours) + float(minutes) / 60
+        except (ValueError, TypeError):
+            pass
+        
+        return 0.0
+
+    def _dates_match(self, date1, date2):
+        """Check if two date strings represent the same date"""
+        try:
+            d1 = self._parse_date(date1)
+            d2 = self._parse_date(date2)
+            return d1.date() == d2.date()
+        except:
+            return False
+
+    def _locations_match(self, location1, location2):
+        """Check if two location strings represent the same location"""
+        if not location1 or not location2:
+            return False
+        
+        # Simple string matching - could be enhanced with geocoding
+        loc1_clean = location1.lower().strip()
+        loc2_clean = location2.lower().strip()
+        
+        return loc1_clean == loc2_clean or loc1_clean in loc2_clean or loc2_clean in loc1_clean
