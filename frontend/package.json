@@ -23,7 +23,7 @@
     "shadcn-vue": "^2.2.0",
     "tailwind-merge": "^3.3.1",
     "tailwindcss-animate": "^1.0.7",
-    "vue": "^3.4.0",
+    "vue": "^3.5.22",
     "vue-router": "^4.2.5",
     "xlsx": "^0.18.5"
   },
