@@ -2,12 +2,14 @@ import os
 import json
 from datetime import datetime, timedelta
 from file_processor import FileProcessor
-from fmcsa_rules import FMCSARules
+from fmcsa_rules_improved import FMCSARulesImproved
+from driver_classifications import driver_classification_system
 
 class AuditEngine:
     def __init__(self):
         self.file_processor = FileProcessor()
-        self.fmcsa_rules = FMCSARules()
+        self.fmcsa_rules = FMCSARulesImproved()
+        self.classification_system = driver_classification_system
         
     def process_audit(self, files, driver_type, driver_name):
         """
@@ -22,16 +24,24 @@ class AuditEngine:
             dict: Complete audit results
         """
         try:
+            # Validate driver type using classification system
+            if not self.classification_system.get_classification(driver_type):
+                print(f"[WARNING] Unknown driver type '{driver_type}', defaulting to 'long-haul'")
+                driver_type = "long-haul"
+            
             # Step 1: Process and extract data from files
-            print(f"Processing {len(files)} files for driver: {driver_name}")
+            # Step 1: Process files and extract data
             extracted_data = self.file_processor.process_files(files)
             
-            # Add driver name and file info to extracted_data for client-specific detection
+            # Add driver metadata to extracted_data
             extracted_data['driver_name'] = driver_name
+            extracted_data['driver_type'] = driver_type
             extracted_data['all_files'] = files
             
-            # Step 2: Apply FMCSA compliance rules
-            print("Applying FMCSA compliance rules...")
+            # Step 2: Apply FMCSA compliance rules using improved engine
+            # Capture violation input data
+            self._capture_violation_input_data(extracted_data, driver_type, driver_name)
+            
             violations = self.fmcsa_rules.analyze_compliance(extracted_data, driver_type)
             
             # Get consolidated violations for cleaner reporting
@@ -331,4 +341,51 @@ class AuditEngine:
             'progress': 100,
             'current_step': 'report_generation',
             'estimated_completion': datetime.now().isoformat()
-        } 
+        }
+    
+    def _capture_violation_input_data(self, extracted_data, driver_type, driver_name):
+        """Capture data that will be sent to violation detection"""
+        try:
+            # Create logs directory if it doesn't exist
+            os.makedirs('logs', exist_ok=True)
+            
+            # Create unique filename
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            violation_input_file = f"logs/violation_input_{timestamp}.json"
+            
+            # Prepare violation input data
+            violation_input = {
+                'audit_info': {
+                    'driver_name': driver_name,
+                    'driver_type': driver_type,
+                    'timestamp': datetime.now().isoformat()
+                },
+                'extracted_data': extracted_data,
+                'data_summary': {
+                    'driver_logs_count': len(extracted_data.get('driver_logs', [])),
+                    'fuel_receipts_count': len(extracted_data.get('fuel_receipts', [])),
+                    'bills_of_lading_count': len(extracted_data.get('bills_of_lading', [])),
+                    'audit_summaries_count': len(extracted_data.get('audit_summaries', []))
+                },
+                'driver_log_details': []
+            }
+            
+            # Add detailed driver log analysis
+            for i, log in enumerate(extracted_data.get('driver_logs', [])):
+                log_detail = {
+                    'log_index': i + 1,
+                    'file_name': log.get('file_name', 'Unknown'),
+                    'entry_count': len(log.get('entries', [])),
+                    'extraction_method': log.get('extraction_method', 'unknown'),
+                    'sample_entries': log.get('entries', [])[:5]  # First 5 entries
+                }
+                violation_input['driver_log_details'].append(log_detail)
+            
+            # Save to file
+            with open(violation_input_file, 'w', encoding='utf-8') as f:
+                json.dump(violation_input, f, indent=2, ensure_ascii=False, default=str)
+            
+            # Violation input data saved to file
+            
+        except Exception as e:
+            print(f"[ERROR] Failed to capture violation input data: {e}") 

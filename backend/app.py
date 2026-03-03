@@ -9,7 +9,8 @@ import pandas as pd
 from werkzeug.utils import secure_filename
 from audit_engine import AuditEngine
 from file_processor import FileProcessor
-from fmcsa_rules import FMCSARules
+from fmcsa_rules_improved import FMCSARulesImproved
+from driver_classifications import driver_classification_system
 from database import db, Audit, AuditFile, User, init_db
 from auth import (
     create_user, authenticate_user, get_user_by_id, get_all_users, 
@@ -46,7 +47,7 @@ with app.app_context():
 # Initialize components
 audit_engine = AuditEngine()
 file_processor = FileProcessor()
-fmcsa_rules = FMCSARules()
+fmcsa_rules = FMCSARulesImproved()
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in Config.ALLOWED_EXTENSIONS
@@ -231,8 +232,62 @@ def health_check():
     return jsonify({
         'status': 'healthy',
         'timestamp': datetime.now().isoformat(),
-        'version': '1.0.0'
+        'version': '2.0.0',
+        'improvements': [
+            'Rule-based violation detection',
+            'Configurable driver classifications', 
+            'Removed hard-coded violations',
+            'Enhanced compliance analysis',
+            'Library-based parsing (no AI dependencies)'
+        ]
     })
+
+@app.route('/api/driver-types', methods=['GET'])
+def get_driver_types():
+    """Get available driver types and their information"""
+    try:
+        driver_types = []
+        for driver_type in driver_classification_system.get_supported_driver_types():
+            info = driver_classification_system.get_driver_type_info(driver_type)
+            driver_types.append({
+                'value': driver_type,
+                'name': info.get('name', driver_type.title()),
+                'description': info.get('description', ''),
+                'hos_limits': info.get('hos_limits', {}),
+                'exemptions': info.get('exemptions', [])
+            })
+        
+        return jsonify({
+            'driver_types': driver_types,
+            'total': len(driver_types)
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/driver-types/<driver_type>/validate', methods=['GET'])
+def validate_driver_type(driver_type):
+    """Validate a specific driver type"""
+    try:
+        is_valid = driver_classification_system.validate_driver_type(driver_type)
+        
+        if is_valid:
+            info = driver_classification_system.get_driver_type_info(driver_type)
+            return jsonify({
+                'valid': True,
+                'driver_type': driver_type,
+                'info': info
+            })
+        else:
+            return jsonify({
+                'valid': False,
+                'driver_type': driver_type,
+                'message': f'Driver type "{driver_type}" is not supported',
+                'supported_types': driver_classification_system.get_supported_driver_types()
+            }), 400
+            
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/audits', methods=['POST'])
 @jwt_required()
@@ -337,7 +392,7 @@ def upload_files(audit_id):
 @jwt_required()
 @auditor_required
 def process_audit(audit_id):
-    """Process the audit with AI engine"""
+    """Process the audit with library-based engine"""
     try:
         # Validate audit_id
         if not audit_id or audit_id == 'undefined' or audit_id == 'null':
@@ -738,7 +793,7 @@ if __name__ == '__main__':
     auto_reload = os.getenv('AUTO_RELOAD', '0') == '1' or os.getenv('FLASK_DEBUG', '0') == '1'
     app.run(
         debug=auto_reload,
-        host='127.0.0.1',
+        host='0.0.0.0',
         port=5000,
         use_reloader=auto_reload
     ) 

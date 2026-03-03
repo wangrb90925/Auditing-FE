@@ -33,8 +33,5 @@ class Config:
     HOST = os.getenv('HOST', '0.0.0.0')
     PORT = int(os.getenv('PORT', 5000))
     
-    # OpenAI Configuration
-    OPENAI_API_KEY = os.getenv('OPENAI_API_KEY', '')
-    OPENAI_MODEL = os.getenv('OPENAI_MODEL', 'gpt-4o-mini')
-    OPENAI_MAX_TOKENS = int(os.getenv('OPENAI_MAX_TOKENS', 4000))
-    OPENAI_TEMPERATURE = float(os.getenv('OPENAI_TEMPERATURE', 0.1))
+    # Library Processing Configuration
+    LIBRARY_PARSER_TIMEOUT = int(os.getenv('LIBRARY_PARSER_TIMEOUT', 30))  # seconds

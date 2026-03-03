@@ -9,7 +9,33 @@ import numpy as np
 from datetime import datetime, timedelta
 import re
 import json
-from openai_service import OpenAIService
+import logging
+from samsara_parser import SamsaraParser
+from daily_log_parser import DailyLogParser
+from fuel_receipt_parser import FuelReceiptParser
+
+# Import additional PDF libraries for better encoding handling
+try:
+    import fitz  # PyMuPDF
+    PYMUPDF_AVAILABLE = True
+except ImportError:
+    PYMUPDF_AVAILABLE = False
+    print("[WARNING] PyMuPDF not available - install with: pip install pymupdf")
+
+try:
+    from pdfminer.high_level import extract_text as pdfminer_extract_text
+    from pdfminer.layout import LAParams
+    PDFMINER_AVAILABLE = True
+except ImportError:
+    PDFMINER_AVAILABLE = False
+    print("[WARNING] pdfminer.six not available - install with: pip install pdfminer.six")
+
+try:
+    import camelot
+    CAMELOT_AVAILABLE = True
+except ImportError:
+    CAMELOT_AVAILABLE = False
+    print("[WARNING] Camelot not available - install with: pip install camelot-py[cv]")
 
 # Configure pytesseract to use the correct Tesseract executable path on Windows
 if os.name == 'nt':  # Windows
@@ -25,13 +51,78 @@ class FileProcessor:
             'weekly_summaries': []  # Added weekly_summaries
         }
         self.suppress_font_warnings = suppress_font_warnings
-        self.openai_service = OpenAIService()  # Initialize OpenAI service
+        # Use direct Samsara parser for accurate library-based extraction
+        self.samsara_parser = SamsaraParser()  # Direct Samsara parser
+        self.daily_log_parser = DailyLogParser()  # Direct Daily Log parser for simple format
+        self.fuel_receipt_parser = FuelReceiptParser()  # Fuel receipt parser for fuel PDFs
         self.processing_stats = {
             'total_files': 0,
             'successful_extractions': 0,
             'font_errors_handled': 0,
             'failed_extractions': 0
         }
+        
+        # Store raw PDF text for pattern analysis
+        self.raw_pdf_data = []
+        
+        # Store library processing data for debugging
+        self.library_input_data = []
+        self.library_response_data = []
+        self.violation_input_data = []
+        
+        # Track current PDF type being processed
+        self.current_pdf_type = None
+        self.current_file_name = None
+        
+        # Store fuel transactions for cross-referencing
+        self.all_fuel_transactions = []
+        
+        # Setup file logging
+        self.setup_file_logging()
+    
+    def setup_file_logging(self):
+        """Setup logging to file for debugging"""
+        # Create logs directory if it doesn't exist
+        os.makedirs('logs', exist_ok=True)
+        
+        # Create a unique log file for this session
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.log_file = f"logs/pdf_extraction_{timestamp}.log"
+        self.json_file = f"logs/extraction_data_{timestamp}.json"
+        self.raw_pdf_file = f"logs/raw_pdf_text_{timestamp}.json"
+        self.library_input_file = f"logs/library_input_{timestamp}.json"
+        self.library_response_file = f"logs/library_response_{timestamp}.json"
+        self.violation_input_file = f"logs/violation_input_{timestamp}.json"
+        
+        # Setup logger
+        self.logger = logging.getLogger('FileProcessor')
+        self.logger.setLevel(logging.DEBUG)
+        
+        # Remove existing handlers
+        for handler in self.logger.handlers[:]:
+            self.logger.removeHandler(handler)
+        
+        # Create file handler
+        file_handler = logging.FileHandler(self.log_file, encoding='utf-8')
+        file_handler.setLevel(logging.DEBUG)
+        
+        # Create formatter
+        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+        file_handler.setFormatter(formatter)
+        
+        # Add handler to logger
+        self.logger.addHandler(file_handler)
+        
+        # Only show the essential file paths
+        print(f"📁 Files will be saved to logs/ directory:")
+        print(f"   - {self.json_file}")
+        print(f"   - {self.raw_pdf_file}")
+        print(f"   - {self.library_response_file}")
+        print(f"   - {self.violation_input_file}")
+    
+    def log_and_print(self, message):
+        """Log to file only (no console output)"""
+        self.logger.info(message.replace('[DEBUG]', '').replace('[SUCCESS]', '').replace('[WARNING]', '').replace('[ERROR]', '').strip())
     
     def process_files(self, files):
         """Process all uploaded files and extract relevant data"""
@@ -67,15 +158,266 @@ class FileProcessor:
         # Print processing summary
         self._print_processing_summary()
         
+        # Debug: Show final extracted data summary
+        self.log_and_print(f"[DEBUG] === FINAL EXTRACTED DATA SUMMARY ===")
+        self.log_and_print(f"[DEBUG] Driver logs: {len(self.extracted_data['driver_logs'])}")
+        self.log_and_print(f"[DEBUG] Fuel receipts: {len(self.extracted_data['fuel_receipts'])}")
+        self.log_and_print(f"[DEBUG] Bills of lading: {len(self.extracted_data['bills_of_lading'])}")
+        self.log_and_print(f"[DEBUG] Audit summaries: {len(self.extracted_data['audit_summaries'])}")
+        
+        # Show details of driver logs
+        for i, log in enumerate(self.extracted_data['driver_logs']):
+            self.log_and_print(f"[DEBUG] Driver log {i+1}: {log.get('file_name', 'Unknown')} - {len(log.get('entries', []))} entries")
+            # Show first entry if exists
+            if log.get('entries'):
+                self.log_and_print(f"[DEBUG]   First entry: {log['entries'][0]}")
+        
+        self.log_and_print(f"[DEBUG] ===================================")
+        
+        # Save extracted data to JSON file
+        try:
+            with open(self.json_file, 'w', encoding='utf-8') as f:
+                json.dump(self.extracted_data, f, indent=2, ensure_ascii=False, default=str)
+            self.log_and_print(f"[SUCCESS] Extracted data saved to: {self.json_file}")
+        except Exception as e:
+            self.log_and_print(f"[ERROR] Failed to save JSON: {e}")
+        
+        # Save raw PDF text data for pattern analysis
+        try:
+            with open(self.raw_pdf_file, 'w', encoding='utf-8') as f:
+                json.dump(self.raw_pdf_data, f, indent=2, ensure_ascii=False, default=str)
+            self.log_and_print(f"[SUCCESS] Raw PDF text saved to: {self.raw_pdf_file}")
+        except Exception as e:
+            self.log_and_print(f"[ERROR] Failed to save raw PDF JSON: {e}")
+        
+        # Save library processing data
+        self._save_library_pipeline_data()
+        
         return self.extracted_data
+    
+    def _save_library_pipeline_data(self):
+        """Save all library processing data to separate JSON files"""
+        try:
+            # Save library input data
+            if self.library_input_data:
+                with open(self.library_input_file, 'w', encoding='utf-8') as f:
+                    json.dump(self.library_input_data, f, indent=2, ensure_ascii=False, default=str)
+                self.log_and_print(f"[SUCCESS] Library input data saved to: {self.library_input_file}")
+            
+            # Save library response data (this replaces the old ai_response files)
+            if self.library_response_data:
+                with open(self.library_response_file, 'w', encoding='utf-8') as f:
+                    json.dump(self.library_response_data, f, indent=2, ensure_ascii=False, default=str)
+                self.log_and_print(f"[SUCCESS] Library response data saved to: {self.library_response_file}")
+            
+            # Save violation input data
+            if self.violation_input_data:
+                with open(self.violation_input_file, 'w', encoding='utf-8') as f:
+                    json.dump(self.violation_input_data, f, indent=2, ensure_ascii=False, default=str)
+                self.log_and_print(f"[SUCCESS] Violation input data saved to: {self.violation_input_file}")
+                
+        except Exception as e:
+            self.log_and_print(f"[ERROR] Failed to save library pipeline data: {e}")
+    
+    def _detect_pdf_type(self, file_path):
+        """
+        Detect PDF type - returns 'simple' for new PDFs with good reading order, 
+        'complex' for old PDFs that need position-based extraction,
+        'fuel_receipt' for fuel receipt documents
+        """
+        if not PYMUPDF_AVAILABLE:
+            return 'complex'  # Default to complex if PyMuPDF not available
+        
+        try:
+            doc = fitz.open(file_path)
+            if len(doc) == 0:
+                return 'complex'
+            
+            # Get text from first page using simple extraction
+            first_page_text = doc[0].get_text("text")
+            
+            # Check if it's a FUEL RECEIPT document
+            if self.fuel_receipt_parser.is_fuel_receipt_document(first_page_text):
+                print(f"[PDF_TYPE] Detected FUEL RECEIPT type: {os.path.basename(file_path)}")
+                return 'fuel_receipt'
+            
+            # Check if it's a DRIVER'S DAILY LOG with proper structure
+            lines = first_page_text.split('\n')
+            
+            # For new-style PDFs, key indicators should appear in order within first 20 lines
+            has_header = False
+            has_log_date = False
+            has_driver = False
+            
+            for i, line in enumerate(lines[:20]):
+                if "DRIVER'S DAILY LOG" in line or "DRIVER'S DAILY LOG" in line.upper():
+                    has_header = True
+                if "Log Date:" in line:
+                    has_log_date = True
+                if "Driver" in line and "Fleet ID" not in line:
+                    has_driver = True
+            
+            # If we have these markers in proper order, it's likely a simple PDF
+            if has_header and has_log_date:
+                print(f"[PDF_TYPE] Detected SIMPLE PDF type (good reading order): {os.path.basename(file_path)}")
+                return 'simple'
+            else:
+                print(f"[PDF_TYPE] Detected COMPLEX PDF type (needs position-based extraction): {os.path.basename(file_path)}")
+                return 'complex'
+                
+        except Exception as e:
+            print(f"[PDF_TYPE] Error detecting PDF type, defaulting to complex: {e}")
+            return 'complex'
+    
+    def _extract_simple_reading_order_pdf(self, file_path, file_name):
+        """Extract PDF text using simple reading order (for new-style PDFs)"""
+        if not PYMUPDF_AVAILABLE:
+            print(f"[PDF] PyMuPDF not available, falling back to complex extraction")
+            return None
+        
+        try:
+            self.log_and_print(f"[PDF] Using PyMuPDF simple reading-order extraction for {file_name}")
+            doc = fitz.open(file_path)
+            text_content = ""
+            
+            for page_num, page in enumerate(doc):
+                # Use "text" mode which preserves reading order
+                page_text = page.get_text("text")
+                if page_text:
+                    text_content += page_text + "\n"
+            
+            doc.close()
+            
+            self.log_and_print(f"[PDF] Simple extraction successful: {len(text_content)} characters")
+            print(f"[PDF] ✓ Simple reading-order extraction successful for {file_name}")
+            return text_content
+            
+        except Exception as e:
+            self.log_and_print(f"[PDF] Simple extraction failed: {e}")
+            print(f"[PDF] Simple extraction failed, will try complex methods: {e}")
+            return None
+    
+    def _test_pdfplumber_extraction(self, file_path, file_name):
+        """Test extraction using pdfplumber only"""
+        try:
+            text_content = ""
+            with pdfplumber.open(file_path) as pdf:
+                print(f"[PDFPLUMBER] Opened PDF with {len(pdf.pages)} pages")
+                for page_num, page in enumerate(pdf.pages):
+                    try:
+                        page_text = page.extract_text()
+                        if page_text:
+                            text_content += page_text + "\n"
+                    except Exception as e:
+                        print(f"[PDFPLUMBER] Error on page {page_num + 1}: {e}")
+                        continue
+            
+            print(f"[PDFPLUMBER] Extracted {len(text_content)} characters")
+            return text_content
+        except Exception as e:
+            print(f"[PDFPLUMBER] Failed: {e}")
+            return ""
+    
+    def _process_extracted_text(self, text_content, file_name):
+        """Process extracted text content and classify it"""
+        # Always preserve raw text for downstream heuristic scanning
+        try:
+            self.extracted_data['audit_summaries'].append({
+                'type': 'raw_text',
+                'file_name': file_name,
+                'content': text_content,
+                'processed_at': datetime.now().isoformat()
+            })
+        except Exception:
+            pass
+        
+        # Determine file type based on filename and content
+        text_content_lower = text_content.lower()
+        
+        # Check for driver log indicators in filename or content
+        if ('log' in file_name.lower() or 'eld' in file_name.lower() or 
+            'driver' in text_content_lower or 'duty status' in text_content_lower or
+            'hours of service' in text_content_lower or 'daily log' in text_content_lower or
+            'rods' in file_name.lower()):
+            # Use library-based extraction for accurate data
+            print(f"[LIBRARY] Using library-based extraction for accurate data: {file_name}")
+            
+            # Try library-based extraction (most accurate)
+            library_success = self._extract_driver_log_data_with_library(text_content, file_name)
+            
+            # Only use fallback if library extraction completely failed
+            if not library_success:
+                print(f"[FALLBACK] Library extraction failed, using fallback for {file_name}")
+                self._extract_driver_log_data_with_fallback(text_content, file_name)
+        elif 'bol' in file_name.lower() or 'lading' in file_name.lower():
+            self._extract_bol_data(text_content, file_name)
+        elif 'fuel' in file_name.lower() or 'receipt' in file_name.lower():
+            self._extract_fuel_receipt_data(text_content, file_name)
+        elif 'weekly' in file_name.lower() or 'summary' in file_name.lower():
+            self._extract_weekly_summary_data(text_content, file_name)
+        else:
+            # Generic PDF processing
+            self._extract_generic_data(text_content, file_name)
     
     def _process_pdf(self, file_path, file_name):
         """Process PDF files (driver logs, BOLs) with comprehensive error handling"""
+        self.log_and_print(f"[PDF] === STARTING PDF PROCESSING: {file_name} ===")
+        self.log_and_print(f"[PDF] File path: {file_path}")
+        self.log_and_print(f"[PDF] File size: {os.path.getsize(file_path)} bytes")
         text_content = ""
         
+        # STEP 0: Detect PDF type and use appropriate extraction method
+        pdf_type = self._detect_pdf_type(file_path)
+        
+        # Store PDF type and filename for parser selection
+        self.current_pdf_type = pdf_type
+        self.current_file_name = file_name
+        
+        # If it's a fuel receipt PDF, use PyMuPDF and parse as fuel receipt
+        if pdf_type == 'fuel_receipt':
+            text_content = self._extract_simple_reading_order_pdf(file_path, file_name)
+            
+            if text_content and text_content.strip():
+                self.log_and_print(f"[PDF] Processing as FUEL RECEIPT document")
+                print(f"[FUEL_RECEIPT] Extracting fuel transaction data from {file_name}")
+                
+                # Parse fuel receipts
+                fuel_transactions = self.fuel_receipt_parser.parse_fuel_receipts(text_content, file_name)
+                
+                # Store fuel transactions for cross-referencing
+                self.all_fuel_transactions.extend(fuel_transactions)
+                
+                # Also add to extracted_data for compatibility
+                self.extracted_data['fuel_receipts'].extend(fuel_transactions)
+                
+                print(f"[FUEL_RECEIPT] ✓ Extracted {len(fuel_transactions)} fuel transactions")
+                return True
+            else:
+                print(f"[FUEL_RECEIPT] Failed to extract text from fuel receipt PDF")
+                return False
+        
+        # If it's a simple PDF (new format), use PyMuPDF reading-order extraction
+        if pdf_type == 'simple':
+            text_content = self._extract_simple_reading_order_pdf(file_path, file_name)
+            
+            # If simple extraction succeeded, skip complex methods
+            if text_content and text_content.strip():
+                self.log_and_print(f"[PDF] Using PyMuPDF reading-order extraction (text order preserved)")
+                self._capture_raw_pdf_structure(text_content, file_name)
+                self._process_extracted_text(text_content, file_name)
+                return True
+            else:
+                # If PyMuPDF failed, fall through to complex methods
+                print(f"[PDF] PyMuPDF reading-order failed, trying complex methods")
+        
+        # For complex PDFs (old format) or if simple extraction failed, use complex methods
+        self.log_and_print(f"[PDF] Using complex multi-library extraction")
+        
         # Method 1: Try pdfplumber with enhanced error handling
+        self.log_and_print(f"[PDF] Method 1: Trying pdfplumber extraction")
         try:
             with pdfplumber.open(file_path) as pdf:
+                self.log_and_print(f"[PDF] Opened PDF with {len(pdf.pages)} pages")
                 for page_num, page in enumerate(pdf.pages):
                     try:
                         # Try standard text extraction first
@@ -143,10 +485,12 @@ class FileProcessor:
                             continue
                             
         except Exception as e:
+            self.log_and_print(f"[ERROR] pdfplumber failed for {file_name}: {str(e)}")
             print(f"pdfplumber failed for {file_name}: {str(e)}")
         
         # Method 2: If pdfplumber failed or produced no content, try PyPDF2 with error handling
         if not text_content.strip():
+            self.log_and_print(f"[PDF] Method 2: Trying PyPDF2 extraction (pdfplumber produced no content)")
             try:
                 with open(file_path, 'rb') as file:
                     pdf_reader = PyPDF2.PdfReader(file)
@@ -177,7 +521,45 @@ class FileProcessor:
             except Exception as e:
                 print(f"PyPDF2 failed for {file_name}: {str(e)}")
         
-        # Method 3: If both PDF libraries fail, try to extract basic text
+        # Try all methods and compare results to find the best extraction
+        extraction_results = {
+            'pdfplumber': text_content,
+            'pymupdf': '',
+            'pdfminer': '',
+            'camelot': ''
+        }
+        
+        # Method 3: Try PyMuPDF (better encoding handling)
+        if PYMUPDF_AVAILABLE:
+            self.log_and_print(f"[PDF] Method 3: Trying PyMuPDF extraction (better encoding)")
+            try:
+                pymupdf_text = self._extract_with_pymupdf(file_path, file_name)
+                extraction_results['pymupdf'] = pymupdf_text
+            except Exception as e:
+                self.log_and_print(f"[ERROR] PyMuPDF failed for {file_name}: {str(e)}")
+        
+        # Method 4: Try pdfminer (robust text extraction)
+        if PDFMINER_AVAILABLE:
+            self.log_and_print(f"[PDF] Method 4: Trying pdfminer extraction (robust)")
+            try:
+                pdfminer_text = self._extract_with_pdfminer(file_path, file_name)
+                extraction_results['pdfminer'] = pdfminer_text
+            except Exception as e:
+                self.log_and_print(f"[ERROR] pdfminer failed for {file_name}: {str(e)}")
+        
+        # Method 5: Try Camelot for tabular data
+        if CAMELOT_AVAILABLE:
+            self.log_and_print(f"[PDF] Method 5: Trying Camelot extraction (tabular)")
+            try:
+                camelot_text = self._extract_with_camelot(file_path, file_name)
+                extraction_results['camelot'] = camelot_text
+            except Exception as e:
+                self.log_and_print(f"[ERROR] Camelot failed for {file_name}: {str(e)}")
+        
+        # Choose the best extraction result
+        text_content = self._choose_best_extraction(extraction_results, file_name)
+        
+        # Method 6: If all libraries fail, try basic extraction
         if not text_content.strip():
             try:
                 text_content = self._extract_basic_pdf_text(file_path)
@@ -185,53 +567,21 @@ class FileProcessor:
                 print(f"Basic PDF extraction failed for {file_name}: {str(e)}")
         
         # Process the extracted text if we have any content
+        self.log_and_print(f"[PDF] === PDF PROCESSING COMPLETE ===")
+        self.log_and_print(f"[PDF] Total text extracted: {len(text_content)} characters")
+        self.log_and_print(f"[PDF] First 200 characters: {text_content[:200]}")
+        
+        # Capture raw PDF text for pattern analysis
         if text_content.strip():
-            # Always preserve raw text for downstream heuristic scanning
-            try:
-                self.extracted_data['audit_summaries'].append({
-                    'type': 'raw_text',
-                    'file_name': file_name,
-                    'content': text_content,
-                    'processed_at': datetime.now().isoformat()
-                })
-            except Exception:
-                pass
-            # Determine file type based on filename and content
-            text_content_lower = text_content.lower()
-            
-            # Check for driver log indicators in filename or content
-            if ('log' in file_name.lower() or 'eld' in file_name.lower() or 
-                'driver' in text_content_lower or 'duty status' in text_content_lower or
-                'hours of service' in text_content_lower or 'daily log' in text_content_lower or
-                'rods' in file_name.lower()):
-                # Always use fallback extraction first to ensure complete date range
-                print(f"[FALLBACK] Using fallback extraction for complete date range: {file_name}")
-                self._extract_driver_log_data_with_fallback(text_content, file_name)
-                
-                # Then enhance with AI if available
-                if self.openai_service.is_available():
-                    print(f"[AI] Enhancing with AI-powered extraction: {file_name}")
-                    self._extract_driver_log_data_with_ai(text_content, file_name)
-                else:
-                    print(f"[TRADITIONAL] Using traditional extraction for RODS file: {file_name}")
-                self._extract_driver_log_data(text_content, file_name)
-            elif 'bol' in file_name.lower() or 'lading' in file_name.lower():
-                self._extract_bol_data(text_content, file_name)
-            elif 'fuel' in file_name.lower() or 'receipt' in file_name.lower():
-                self._extract_fuel_receipt_data(text_content, file_name)
-            elif 'weekly' in file_name.lower() or 'summary' in file_name.lower():
-                self._extract_weekly_summary_data(text_content, file_name)
-            else:
-                # Generic PDF processing
-                self._extract_generic_data(text_content, file_name)
+            self._capture_raw_pdf_structure(text_content, file_name)
+            self._process_extracted_text(text_content, file_name)
+            return True
         else:
             if not self.suppress_font_warnings:
                 print(f"Warning: No text content could be extracted from {file_name}")
             # Add a placeholder entry to indicate processing was attempted
             self._add_processing_placeholder(file_name, 'pdf')
             return False  # Failed to extract text
-        
-        return True  # Successfully processed
     
     def _extract_basic_pdf_text(self, file_path):
         """Extract basic text from PDF using alternative methods"""
@@ -242,7 +592,8 @@ class FileProcessor:
                                   capture_output=True, text=True, timeout=30)
             if result.returncode == 0 and result.stdout.strip():
                 return result.stdout
-        except:
+        except Exception as e:
+            self.log_and_print(f"[ERROR] pdftotext command failed: {e}")
             pass
         
         # Try alternative PDF processing with color error suppression
@@ -250,7 +601,8 @@ class FileProcessor:
             text_content = self._extract_pdf_with_color_suppression(file_path)
             if text_content:
                 return text_content
-        except:
+        except Exception as e:
+            self.log_and_print(f"[ERROR] Color suppression PDF extraction failed: {e}")
             pass
         
         # Fallback: return empty string if all methods fail
@@ -482,13 +834,15 @@ class FileProcessor:
             # 1. Noise reduction
             try:
                 denoised = cv2.fastNlMeansDenoising(gray)
-            except:
+            except Exception as e:
+                self.log_and_print(f"[DEBUG] Denoising failed: {e}")
                 denoised = gray  # Fallback to original if denoising fails
             
             # 2. Thresholding
             try:
                 _, thresh = cv2.threshold(denoised, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-            except:
+            except Exception as e:
+                self.log_and_print(f"[DEBUG] Thresholding failed: {e}")
                 thresh = denoised  # Fallback to denoised if thresholding fails
             
             # 3. OCR extraction with multiple attempts
@@ -510,8 +864,9 @@ class FileProcessor:
                 # Try alternative OCR if available
                 try:
                     text_content = self._alternative_ocr_extraction(file_path)
-                except:
-                    print(f"Alternative OCR also failed for {file_name}")
+                except Exception as e:
+                    print(f"Alternative OCR also failed for {file_name}: {e}")
+                    self.log_and_print(f"[ERROR] Alternative OCR failed: {e}")
         
         except Exception as e:
             print(f"Image processing failed for {file_name}: {str(e)}")
@@ -586,10 +941,10 @@ class FileProcessor:
                     if 'Driver_Log' in sheet_name or 'Duty_Status' in df.columns or 'Time' in df.columns:
                         print(f"  - Processing sheet '{sheet_name}' as driver log")
                         
-                        # Use AI enhancement for driver logs if available
-                        if is_driver_log_file and self.openai_service.is_available():
-                            print(f"[AI] Enhancing Excel driver log with AI: {file_name}")
-                            self._extract_driver_log_from_excel_with_ai(df, file_name, sheet_name)
+                        # Use library processing for Excel files
+                        if is_driver_log_file:
+                            print(f"[LIBRARY] Enhancing Excel driver log with library parser: {file_name}")
+                            self._extract_driver_log_from_excel_with_library(df, file_name, sheet_name)
                         else:
                             self._extract_driver_log_from_excel(df, file_name)
                         sheets_processed += 1
@@ -642,11 +997,18 @@ class FileProcessor:
     
     def _extract_driver_log_data(self, text_content, file_name):
         """Extract driver log data from text content"""
+        self.log_and_print(f"[DEBUG] === EXTRACTING DRIVER LOG DATA FROM {file_name} ===")
+        self.log_and_print(f"[DEBUG] Text content length: {len(text_content)} characters")
+        self.log_and_print(f"[DEBUG] First 300 characters:")
+        self.log_and_print(f"[DEBUG] {text_content[:300]}")
+        self.log_and_print(f"[DEBUG] ===")
+        
         # Parse the text content to extract log entries
         entries = []
         
         # Split text into lines and process each line
         lines = text_content.split('\n')
+        self.log_and_print(f"[DEBUG] Split into {len(lines)} lines")
         current_date = None
         
         # Enhanced date patterns for ELD logs
@@ -664,36 +1026,54 @@ class FileProcessor:
         for line in lines:
             for pattern in date_patterns:
                 matches = re.findall(pattern, line)
+                if matches:
+                    self.log_and_print(f"[DEBUG] Found date matches in line '{line[:50]}...': {matches}")
                 all_dates.update(matches)
+        
+        self.log_and_print(f"[DEBUG] All dates found: {all_dates}")
         
         # Use the most common date if found
         if all_dates:
             current_date = list(all_dates)[0]  # Use first found date
+            self.log_and_print(f"[DEBUG] Using current_date: {current_date}")
+        else:
+            self.log_and_print(f"[DEBUG] No dates found in text")
         
         # Look for actual log entries (not headers)
-        for line in lines:
+        self.log_and_print(f"[DEBUG] === PROCESSING ALL LINES ===")
+        for line_num, line in enumerate(lines, 1):
             line = line.strip()
             if not line:
                 continue
             
+            self.log_and_print(f"[DEBUG] Line {line_num}: '{line}'")
+            
             # Skip header lines and common non-log content
-            if any(skip_word in line.lower() for skip_word in [
+            skip_words = [
                 'fleet', 'samsara', 'hours of service report', 'carrier name',
                 'carrier address', 'driver:', 'app:', 'driver license:',
                 'ruleset:', 'vehicles:', 'home terminal', 'date', 'shift',
                 'driving', 'from', 'to', 'miwnw', 'miwne', 'miwsw', 'miwse',
                 'time duration status remark', 'certified on', 'm 1 2 3 4'
-            ]):
+            ]
+            
+            should_skip = any(skip_word in line.lower() for skip_word in skip_words)
+            if should_skip:
+                self.log_and_print(f"[DEBUG] SKIPPING line {line_num} (header/non-log content)")
                 continue
             
-            # Look for tabular log entries with time and status in different positions
-            # Pattern: time + duration + status + remark + location
+            self.log_and_print(f"[DEBUG] PROCESSING line {line_num} for log entries")
+            
+            # Enhanced patterns to extract ALL fields from Samsara ELD format
+            # Based on the actual PDF format: "Time Duration Status Remark Vehicle Odometer Location"
             tabular_patterns = [
-                # Pattern for Samsara tabular format: time duration status remark location
-                r'(\d{1,2}:\d{2}:\d{2})\s+(\d+[hm]?\s*\d*[ms]?)\s+(OFF DUTY|ON DUTY|DRIVING|SLEEPER|OFF-DUTY|ON-DUTY)\s+(.+?)\s+(\d+\.\d+\s+mi\w+\s+.+)',
-                # Pattern for time + status + location
+                # Full Samsara format: "12:34 AM EDT  4 h 30 m DRIVING ELD KENWORTH  123.4 mi Location"
+                r'(\d{1,2}:\d{2})\s+(AM|PM)\s+EDT\s+(\d+\s*h?\s*\d*\s*m?)\s+(OFF DUTY|ON DUTY|DRIVING|SLEEPER|PERSONAL CONVEYANCE|OFF-DUTY|ON-DUTY)\s*([^k]*?)\s*(kENWORTH[^m]*?)\s*(\d+\.\d+\s*mi\w*)\s*(.+)',
+                # Simpler format: "12:34 AM EDT  4 h 30 m DRIVING Location"  
+                r'(\d{1,2}:\d{2})\s+(AM|PM)\s+EDT\s+(\d+\s*h?\s*\d*\s*m?)\s+(OFF DUTY|ON DUTY|DRIVING|SLEEPER|PERSONAL CONVEYANCE|OFF-DUTY|ON-DUTY)\s+(.+)',
+                # Basic format: "12:34:56 DRIVING Location"
                 r'(\d{1,2}:\d{2}:\d{2})\s+(OFF DUTY|ON DUTY|DRIVING|SLEEPER|OFF-DUTY|ON-DUTY)\s+(.+)',
-                # Pattern for time + status (simpler)
+                # Time only format: "12:34:56 DRIVING"
                 r'(\d{1,2}:\d{2}:\d{2})\s+(OFF DUTY|ON DUTY|DRIVING|SLEEPER|OFF-DUTY|ON-DUTY)',
             ]
             
@@ -704,53 +1084,110 @@ class FileProcessor:
             ]
             
             # Try tabular patterns first
-            for pattern in tabular_patterns:
+            self.log_and_print(f"[DEBUG] Trying {len(tabular_patterns)} tabular patterns on line: '{line}'")
+            for i, pattern in enumerate(tabular_patterns):
+                self.log_and_print(f"[DEBUG] Pattern {i+1}: {pattern}")
                 match = re.search(pattern, line, re.IGNORECASE)
+                if match:
+                    self.log_and_print(f"[DEBUG] MATCH FOUND! Groups: {match.groups()}")
                 if match and current_date:
-                    time_str = match.group(1)
-                    status = match.group(3) if len(match.groups()) >= 3 else match.group(2)
+                    groups = match.groups()
+                    self.log_and_print(f"[DEBUG] Processing match with {len(groups)} groups: {groups}")
                     
-                    # Convert time with seconds to HH:MM format
-                    if ':' in time_str and len(time_str.split(':')) == 3:
-                        parts = time_str.split(':')
-                        hours = int(parts[0])
-                        minutes = int(parts[1])
-                        time_str = f"{hours:02d}:{minutes:02d}"
+                    # Extract fields based on pattern type
+                    if len(groups) >= 8:  # Full Samsara format
+                        time_str = groups[0]
+                        am_pm = groups[1]
+                        duration = groups[2].strip()
+                        status = groups[3]
+                        remarks = groups[4].strip() if groups[4] else ""
+                        vehicle = groups[5].strip() if groups[5] else ""
+                        odometer = groups[6].strip() if groups[6] else ""
+                        location = groups[7].strip() if groups[7] else ""
+                        
+                        # Combine time with AM/PM
+                        full_time = f"{time_str} {am_pm}"
+                        
+                    elif len(groups) >= 5:  # Simpler Samsara format
+                        time_str = groups[0]
+                        am_pm = groups[1]
+                        duration = groups[2].strip()
+                        status = groups[3]
+                        location_and_more = groups[4].strip()
+                        
+                        # Parse location and other info from the remaining text
+                        location = self._extract_location_from_text(location_and_more)
+                        remarks = self._extract_remarks_from_text(location_and_more)
+                        vehicle = self._extract_vehicle_from_text(location_and_more)
+                        odometer = self._extract_odometer_from_text(location_and_more)
+                        
+                        full_time = f"{time_str} {am_pm}"
+                        
+                    else:  # Basic format
+                        if len(groups) >= 3:
+                            time_str = groups[0]
+                            status = groups[1]
+                            location = groups[2] if len(groups) > 2 else ""
+                        else:
+                            time_str = groups[0]
+                            status = groups[1]
+                            location = ""
+                        
+                        full_time = time_str
+                        duration = ""
+                        remarks = ""
+                        vehicle = ""
+                        odometer = ""
                     
-                    # Extract location from the line
-                    location = self._extract_location(line)
-                    if not location or location == 'Unknown Location':
-                        # Try to extract location from the match groups
-                        if len(match.groups()) >= 5:
-                            location = match.group(5).strip()
-                        elif len(match.groups()) >= 4:
-                            location = match.group(4).strip()
+                    # Convert duration to hours (for violation calculations)
+                    duration_hours = self._parse_duration_to_hours(duration)
                     
-                    # Only add if we have a valid status and it's not a duplicate
-                    if status and status.lower() in ['off duty', 'on duty', 'driving', 'sleeper', 'off-duty', 'on-duty']:
-                        # Check for duplicates (same time and status)
+                    # Clean up status
+                    clean_status = status.lower().replace('-', ' ').replace('_', ' ')
+                    
+                    # Only add if we have a valid status
+                    valid_statuses = ['off duty', 'on duty', 'driving', 'sleeper', 'personal conveyance']
+                    if any(valid_status in clean_status for valid_status in valid_statuses):
+                        # Check for duplicates
                         is_duplicate = any(
-                            entry.get('time') == time_str and 
-                            entry.get('duty_status', [{}])[0].get('status') == status.lower()
+                            entry.get('start_time') == full_time and 
+                            entry.get('duty_status') == clean_status
                             for entry in entries
                         )
                         
                         if not is_duplicate:
-                            entries.append({
+                            new_entry = {
                                 'date': current_date,
-                                'time': time_str,
+                                'start_time': full_time,
+                                'end_time': self._calculate_end_time(full_time, duration),
+                                'duration': duration,
+                                'duration_hours': duration_hours,
+                                'duty_status': clean_status,
+                                'remarks': remarks,
+                                'vehicle': vehicle,
+                                'odometer': odometer,
                                 'location': location,
-                                'duty_status': [{
-                                    'status': status.lower().replace('-', ' '),
-                                    'line': line
-                                }]
-                            })
+                                'raw_line': line
+                            }
+                            entries.append(new_entry)
+                            self.log_and_print(f"[DEBUG] ADDED COMPLETE ENTRY: {new_entry}")
+                        else:
+                            self.log_and_print(f"[DEBUG] SKIPPED DUPLICATE: time={full_time}, status={clean_status}")
+                    else:
+                        self.log_and_print(f"[DEBUG] INVALID STATUS: '{status}' -> '{clean_status}'")
                     break
+                else:
+                    self.log_and_print(f"[DEBUG] Pattern {i+1} no match")
         
             # If no tabular match, try status abbreviation patterns
-            if not any(re.search(pattern, line, re.IGNORECASE) for pattern in tabular_patterns):
-                for pattern in status_abbrev_patterns:
+            tabular_matched = any(re.search(pattern, line, re.IGNORECASE) for pattern in tabular_patterns)
+            if not tabular_matched:
+                self.log_and_print(f"[DEBUG] No tabular match, trying abbreviation patterns")
+                for i, pattern in enumerate(status_abbrev_patterns):
+                    self.log_and_print(f"[DEBUG] Abbrev Pattern {i+1}: {pattern}")
                     match = re.search(pattern, line, re.IGNORECASE)
+                    if match:
+                        self.log_and_print(f"[DEBUG] ABBREV MATCH FOUND! Groups: {match.groups()}")
                     if match and current_date:
                         status_abbrev = match.group(1).upper()
                         time_str = match.group(2)
@@ -782,7 +1219,7 @@ class FileProcessor:
                         )
                         
                         if not is_duplicate:
-                            entries.append({
+                            abbrev_entry = {
                                 'date': current_date,
                                 'time': time_str,
                                 'location': location,
@@ -790,8 +1227,16 @@ class FileProcessor:
                                     'status': status.lower(),
                                     'line': line
                                 }]
-                            })
+                            }
+                            entries.append(abbrev_entry)
+                            self.log_and_print(f"[DEBUG] ADDED ABBREV ENTRY: {abbrev_entry}")
+                        else:
+                            self.log_and_print(f"[DEBUG] SKIPPED DUPLICATE ABBREV: time={time_str}, status={status}")
                         break
+                    else:
+                        self.log_and_print(f"[DEBUG] Abbrev Pattern {i+1} no match")
+            else:
+                self.log_and_print(f"[DEBUG] Tabular pattern matched, skipping abbreviation patterns")
         
         # Do not fabricate entries from time patterns; prefer raw-text heuristics in rules engine
         
@@ -838,24 +1283,441 @@ class FileProcessor:
                 }
             ]
         
+        self.log_and_print(f"[DEBUG] Final extraction results for {file_name}:")
+        self.log_and_print(f"[DEBUG] - Found {len(entries)} entries")
+        self.log_and_print(f"[DEBUG] - Current date used: {current_date}")
+        
+        # Show first few entries
+        for i, entry in enumerate(entries[:3]):
+            self.log_and_print(f"[DEBUG] Entry {i+1}: {entry}")
+        
         if entries:
-            self.extracted_data['driver_logs'].append({
+            log_data = {
                 'type': 'driver_log',
                 'file_name': file_name,
                 'entries': entries
-            })
-            print(f"[SUCCESS] Extracted {len(entries)} driver log entries from {file_name}")
+            }
+            self.extracted_data['driver_logs'].append(log_data)
+            self.log_and_print(f"[SUCCESS] Extracted {len(entries)} driver log entries from {file_name}")
+            self.log_and_print(f"[DEBUG] Total driver logs in extracted_data: {len(self.extracted_data['driver_logs'])}")
         else:
-            print(f"[WARNING] No driver log entries extracted from {file_name}")
+            self.log_and_print(f"[WARNING] No entries extracted from {file_name} - adding empty log")
+            # Add empty log to show file was processed
+            self.extracted_data['driver_logs'].append({
+                'type': 'driver_log',
+                'file_name': file_name,
+                'entries': [],
+                'extraction_failed': True
+            })
+    
+    def _parse_duration_to_hours(self, duration_str):
+        """Parse duration string like '4 h 30 m' to decimal hours"""
+        if not duration_str:
+            return 0.0
+        
+        try:
+            # Extract hours and minutes from duration string
+            hours = 0
+            minutes = 0
+            
+            # Look for hours pattern
+            hour_match = re.search(r'(\d+)\s*h', duration_str, re.IGNORECASE)
+            if hour_match:
+                hours = int(hour_match.group(1))
+            
+            # Look for minutes pattern
+            min_match = re.search(r'(\d+)\s*m', duration_str, re.IGNORECASE)
+            if min_match:
+                minutes = int(min_match.group(1))
+            
+            # Convert to decimal hours
+            total_hours = hours + (minutes / 60.0)
+            self.log_and_print(f"[DEBUG] Parsed duration '{duration_str}' -> {total_hours:.2f} hours")
+            return total_hours
+            
+        except Exception as e:
+            self.log_and_print(f"[DEBUG] Error parsing duration '{duration_str}': {e}")
+            return 0.0
+    
+    def _calculate_end_time(self, start_time, duration):
+        """Calculate end time from start time and duration"""
+        if not duration:
+            return ""
+        
+        try:
+            # This is a simplified calculation
+            # In practice, you'd need proper time parsing and addition
+            return f"{start_time} + {duration}"
+        except Exception as e:
+            self.log_and_print(f"[ERROR] Error calculating end time: {e}")
+            return ""
+    
+    def _extract_location_from_text(self, text):
+        """Extract location from text containing multiple fields"""
+        # Look for location patterns at the end of the text
+        location_match = re.search(r'mi\w*\s+(.+)$', text)
+        if location_match:
+            return location_match.group(1).strip()
+        return text.split()[-1] if text else ""
+    
+    def _extract_remarks_from_text(self, text):
+        """Extract remarks from text"""
+        # Look for common remarks like ELD, Break, Loading, etc.
+        remarks = []
+        if 'ELD' in text:
+            remarks.append('ELD')
+        if 'Break' in text:
+            remarks.append('Break')
+        if 'Loading' in text:
+            remarks.append('Loading')
+        if 'Unloading' in text:
+            remarks.append('Unloading')
+        if 'PreTrip' in text:
+            remarks.append('PreTrip Inspection')
+        if 'Sleep' in text:
+            remarks.append('Sleep')
+        if 'Fuel' in text:
+            remarks.append('Fuel')
+        if 'Agriculture' in text:
+            remarks.append('Agriculture Exempt')
+        return ', '.join(remarks)
+    
+    def _extract_vehicle_from_text(self, text):
+        """Extract vehicle information from text"""
+        vehicle_match = re.search(r'(kENWORTH[^m]*)', text)
+        if vehicle_match:
+            return vehicle_match.group(1).strip()
+        return ""
+    
+    def _extract_odometer_from_text(self, text):
+        """Extract odometer reading from text"""
+        odometer_match = re.search(r'(\d+\.\d+\s*mi\w*)', text)
+        if odometer_match:
+            return odometer_match.group(1).strip()
+        return ""
+    
+    def _extract_with_pymupdf(self, file_path, file_name):
+        """Extract text using PyMuPDF (better encoding handling)"""
+        if not PYMUPDF_AVAILABLE:
+            return ""
+        
+        try:
+            self.log_and_print(f"[PYMUPDF] Opening PDF with PyMuPDF: {file_name}")
+            doc = fitz.open(file_path)
+            text_content = ""
+            
+            for page_num in range(len(doc)):
+                page = doc.load_page(page_num)
+                
+                # Try different text extraction methods
+                try:
+                    # Method 1: Standard text extraction
+                    page_text = page.get_text()
+                    if page_text and page_text.strip():
+                        text_content += page_text + "\n"
+                        self.log_and_print(f"[PYMUPDF] Page {page_num + 1}: {len(page_text)} chars extracted")
+                    else:
+                        # Method 2: Text extraction with encoding options
+                        if PYMUPDF_AVAILABLE:
+                            page_text = page.get_text("text", flags=fitz.TEXT_PRESERVE_WHITESPACE)
+                            if page_text and page_text.strip():
+                                text_content += page_text + "\n"
+                                self.log_and_print(f"[PYMUPDF] Page {page_num + 1}: {len(page_text)} chars (with encoding)")
+                            else:
+                                # Method 3: Dictionary-based extraction
+                                text_dict = page.get_text("dict")
+                                page_text = self._extract_text_from_dict(text_dict)
+                                if page_text:
+                                    text_content += page_text + "\n"
+                                    self.log_and_print(f"[PYMUPDF] Page {page_num + 1}: {len(page_text)} chars (dict method)")
+                
+                except Exception as page_error:
+                    self.log_and_print(f"[ERROR] PyMuPDF page {page_num + 1} error: {page_error}")
+                    continue
+            
+            doc.close()
+            self.log_and_print(f"[PYMUPDF] Total extracted: {len(text_content)} characters")
+            return text_content
+            
+        except Exception as e:
+            self.log_and_print(f"[ERROR] PyMuPDF extraction failed: {e}")
+            return ""
+    
+    def _extract_with_pdfminer(self, file_path, file_name):
+        """Extract text using pdfminer (robust encoding)"""
+        if not PDFMINER_AVAILABLE:
+            return ""
+        
+        try:
+            self.log_and_print(f"[PDFMINER] Extracting with pdfminer: {file_name}")
+            
+            # Try with different LAParams for better text extraction
+            laparams = LAParams(
+                boxes_flow=0.5,
+                word_margin=0.1,
+                char_margin=2.0,
+                line_margin=0.5
+            )
+            
+            text_content = pdfminer_extract_text(file_path, laparams=laparams)
+            self.log_and_print(f"[PDFMINER] Extracted {len(text_content)} characters")
+            
+            return text_content
+            
+        except Exception as e:
+            self.log_and_print(f"[ERROR] pdfminer extraction failed: {e}")
+            return ""
+    
+    def _extract_with_camelot(self, file_path, file_name):
+        """Extract tabular data using Camelot"""
+        if not CAMELOT_AVAILABLE:
+            return ""
+        
+        try:
+            self.log_and_print(f"[CAMELOT] Extracting tables with Camelot: {file_name}")
+            
+            # Extract tables from PDF
+            tables = camelot.read_pdf(file_path, pages='all', flavor='stream')
+            
+            text_content = ""
+            for i, table in enumerate(tables):
+                self.log_and_print(f"[CAMELOT] Table {i + 1}: {table.shape[0]} rows, {table.shape[1]} cols")
+                
+                # Convert table to text
+                df = table.df
+                table_text = df.to_string(index=False)
+                text_content += f"\n--- Table {i + 1} ---\n{table_text}\n"
+            
+            self.log_and_print(f"[CAMELOT] Total extracted: {len(text_content)} characters from {len(tables)} tables")
+            return text_content
+            
+        except Exception as e:
+            self.log_and_print(f"[ERROR] Camelot extraction failed: {e}")
+            return ""
+    
+    def _extract_text_from_dict(self, text_dict):
+        """Extract text from PyMuPDF text dictionary"""
+        try:
+            text_parts = []
+            
+            for block in text_dict.get("blocks", []):
+                if "lines" in block:
+                    for line in block["lines"]:
+                        line_text = ""
+                        for span in line.get("spans", []):
+                            span_text = span.get("text", "")
+                            if span_text.strip():
+                                line_text += span_text + " "
+                        if line_text.strip():
+                            text_parts.append(line_text.strip())
+            
+            return "\n".join(text_parts)
+            
+        except Exception as e:
+            self.log_and_print(f"[ERROR] Error extracting from text dict: {e}")
+            return ""
+    
+    def _choose_best_extraction(self, extraction_results, file_name):
+        """Choose the best extraction result from multiple methods"""
+        try:
+            self.log_and_print(f"[PDF] === COMPARING EXTRACTION RESULTS ===")
+            
+            best_text = ""
+            best_method = ""
+            best_score = 0
+            
+            for method, text in extraction_results.items():
+                if not text or not text.strip():
+                    score = 0
+                else:
+                    # Score based on content quality
+                    score = self._score_extraction_quality(text, method)
+                
+                self.log_and_print(f"[PDF] {method}: {len(text)} chars, score: {score}")
+                self.log_and_print(f"[PDF] {method} sample: {text[:100]}...")
+                
+                if score > best_score:
+                    best_score = score
+                    best_text = text
+                    best_method = method
+            
+            self.log_and_print(f"[PDF] === BEST METHOD: {best_method} (score: {best_score}) ===")
+            
+            # Save comparison results
+            comparison_data = {
+                'file_name': file_name,
+                'extraction_comparison': {},
+                'best_method': best_method,
+                'best_score': best_score,
+                'timestamp': datetime.now().isoformat()
+            }
+            
+            for method, text in extraction_results.items():
+                comparison_data['extraction_comparison'][method] = {
+                    'character_count': len(text),
+                    'quality_score': self._score_extraction_quality(text, method),
+                    'sample_text': text[:200],
+                    'has_time_patterns': len(re.findall(r'\d{1,2}:\d{2}', text)) > 0,
+                    'has_duration_patterns': len(re.findall(r'\d+\s*h\s*\d*\s*m', text)) > 0,
+                    'has_status_patterns': len(re.findall(r'DRIVING|ON DUTY|OFF DUTY', text)) > 0
+                }
+            
+            # Save to comparison file
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            comparison_file = f"logs/extraction_comparison_{timestamp}.json"
+            with open(comparison_file, 'w', encoding='utf-8') as f:
+                json.dump(comparison_data, f, indent=2, ensure_ascii=False, default=str)
+            
+            self.log_and_print(f"[SUCCESS] Extraction comparison saved to: {comparison_file}")
+            
+            return best_text
+            
+        except Exception as e:
+            self.log_and_print(f"[ERROR] Error choosing best extraction: {e}")
+            # Return the longest text as fallback
+            return max(extraction_results.values(), key=len, default="")
+    
+    def _score_extraction_quality(self, text, method):
+        """Score the quality of extracted text"""
+        if not text or not text.strip():
+            return 0
+        
+        score = 0
+        
+        # Base score from text length
+        score += min(len(text) / 1000, 50)  # Up to 50 points for length
+        
+        # Bonus for having time patterns
+        time_patterns = len(re.findall(r'\d{1,2}:\d{2}', text))
+        score += min(time_patterns * 2, 20)  # Up to 20 points
+        
+        # Bonus for having duration patterns  
+        duration_patterns = len(re.findall(r'\d+\s*h\s*\d*\s*m', text))
+        score += min(duration_patterns * 3, 30)  # Up to 30 points
+        
+        # Bonus for having status patterns
+        status_patterns = len(re.findall(r'DRIVING|ON DUTY|OFF DUTY|SLEEPER', text, re.IGNORECASE))
+        score += min(status_patterns * 2, 20)  # Up to 20 points
+        
+        # Penalty for broken characters (common encoding issues)
+        broken_chars = len(re.findall(r'[^\x00-\x7F\s]', text))  # Non-ASCII chars
+        if broken_chars > len(text) * 0.1:  # More than 10% broken chars
+            score -= 50
+        
+        # Bonus for specific methods known to handle encoding better
+        if method == 'pymupdf':
+            score += 10
+        elif method == 'pdfminer':
+            score += 15
+        elif method == 'camelot':
+            score += 5
+        
+        return score
+    
+    def _capture_raw_pdf_structure(self, text_content, file_name):
+        """Capture raw PDF text structure for pattern analysis"""
+        try:
+            lines = text_content.split('\n')
+            
+            # Analyze the structure
+            structure_data = {
+                'file_name': file_name,
+                'total_characters': len(text_content),
+                'total_lines': len(lines),
+                'processed_at': datetime.now().isoformat(),
+                'sample_lines': [],
+                'time_patterns_found': [],
+                'status_patterns_found': [],
+                'duration_patterns_found': [],
+                'vehicle_patterns_found': [],
+                'location_patterns_found': []
+            }
+            
+            # Capture sample lines and analyze patterns
+            for i, line in enumerate(lines[:200]):  # First 200 lines
+                line = line.strip()
+                if not line:
+                    continue
+                
+                structure_data['sample_lines'].append({
+                    'line_number': i + 1,
+                    'content': line,
+                    'length': len(line)
+                })
+                
+                # Look for time patterns
+                time_matches = re.findall(r'\d{1,2}:\d{2}(?::\d{2})?\s*(?:AM|PM)?', line, re.IGNORECASE)
+                if time_matches:
+                    structure_data['time_patterns_found'].append({
+                        'line': i + 1,
+                        'content': line,
+                        'matches': time_matches
+                    })
+                
+                # Look for status patterns
+                status_matches = re.findall(r'(DRIVING|ON DUTY|OFF DUTY|SLEEPER|PERSONAL CONVEYANCE)', line, re.IGNORECASE)
+                if status_matches:
+                    structure_data['status_patterns_found'].append({
+                        'line': i + 1,
+                        'content': line,
+                        'matches': status_matches
+                    })
+                
+                # Look for duration patterns
+                duration_matches = re.findall(r'\d+\s*h\s*\d*\s*m?', line, re.IGNORECASE)
+                if duration_matches:
+                    structure_data['duration_patterns_found'].append({
+                        'line': i + 1,
+                        'content': line,
+                        'matches': duration_matches
+                    })
+                
+                # Look for vehicle patterns
+                vehicle_matches = re.findall(r'kENWORTH[^m]*', line, re.IGNORECASE)
+                if vehicle_matches:
+                    structure_data['vehicle_patterns_found'].append({
+                        'line': i + 1,
+                        'content': line,
+                        'matches': vehicle_matches
+                    })
+                
+                # Look for location patterns
+                location_matches = re.findall(r'\d+\.\d+\s*mi\w*\s+([A-Za-z\s,]+)', line)
+                if location_matches:
+                    structure_data['location_patterns_found'].append({
+                        'line': i + 1,
+                        'content': line,
+                        'matches': location_matches
+                    })
+            
+            # Add to raw PDF data collection
+            self.raw_pdf_data.append(structure_data)
+            
+            self.log_and_print(f"[RAW_PDF] Captured structure for {file_name}:")
+            self.log_and_print(f"[RAW_PDF] - {len(structure_data['time_patterns_found'])} lines with time patterns")
+            self.log_and_print(f"[RAW_PDF] - {len(structure_data['status_patterns_found'])} lines with status patterns")
+            self.log_and_print(f"[RAW_PDF] - {len(structure_data['duration_patterns_found'])} lines with duration patterns")
+            self.log_and_print(f"[RAW_PDF] - {len(structure_data['vehicle_patterns_found'])} lines with vehicle patterns")
+            self.log_and_print(f"[RAW_PDF] - {len(structure_data['location_patterns_found'])} lines with location patterns")
+            
+        except Exception as e:
+            self.log_and_print(f"[ERROR] Failed to capture raw PDF structure: {e}")
     
     def _extract_driver_log_data_with_fallback(self, text_content, file_name):
         """Extract driver log data using fallback method to ensure complete date range"""
         try:
             print(f"[FALLBACK] Processing RODS file with fallback extraction: {file_name}")
             
-            # Use OpenAI service fallback extraction to get complete date range
-            fallback_result = self.openai_service._fallback_extraction(text_content, file_name)
+            # Use OpenAI fallback extraction if available
+            if self.openai_service and self.openai_service.is_available():
+                fallback_result = self.openai_service._fallback_extraction(text_content, file_name)
+            else:
+                # Simple fallback - just use traditional extraction
+                print(f"[FALLBACK] Using traditional extraction as fallback")
+                self._extract_driver_log_data(text_content, file_name)
+                return
             
+            # Process OpenAI fallback result
             if fallback_result and fallback_result.get('extraction_method') == 'fallback':
                 # Convert fallback result to our expected format
                 entries = []
@@ -913,92 +1775,139 @@ class FileProcessor:
         except Exception as e:
             print(f"[ERROR] Fallback extraction error for {file_name}: {str(e)}")
     
-    def _extract_driver_log_data_with_ai(self, text_content, file_name):
-        """Extract driver log data using OpenAI for enhanced accuracy"""
+    def _extract_driver_log_data_with_library(self, text_content, file_name):
+        """Extract driver log data using library-based parsing for enhanced accuracy"""
         try:
-            print(f"[AI] Processing RODS file with AI: {file_name}")
+            print(f"[LIBRARY] Processing RODS file with library parser: {file_name}")
             
-            # Use OpenAI service to extract structured data
-            ai_result = self.openai_service.extract_rods_data(text_content, file_name)
+            # Capture library input data
+            library_input = {
+                'file_name': file_name,
+                'text_content': text_content,
+                'text_length': len(text_content),
+                'timestamp': datetime.now().isoformat(),
+                'method': 'library_rods_extraction'
+            }
+            self.library_input_data.append(library_input)
+            self.log_and_print(f"[LIBRARY_INPUT] Captured input data for {file_name} ({len(text_content)} chars)")
             
-            if ai_result and ai_result.get('extraction_method') == 'openai':
-                # Convert AI result to our expected format
-                entries = []
-                
-                # Process daily entries from AI result
-                daily_entries = ai_result.get('daily_entries', [])
-                for day_entry in daily_entries:
-                    date = day_entry.get('date', '2024-01-01')
-                    day_entries = day_entry.get('entries', [])
-                    
-                    for entry in day_entries:
-                        entries.append({
-                            'date': date,
-                            'time': entry.get('time', '00:00'),
-                            'location': entry.get('location', 'Unknown'),
-                            'duty_status': [{
-                                'status': entry.get('duty_status', 'unknown'),
-                                'line': f"{entry.get('time', '00:00')} - {entry.get('duty_status', 'unknown')} - {entry.get('location', 'Unknown')}"
-                            }]
-                        })
+            # Use appropriate parser based on PDF type
+            if self.current_pdf_type == 'simple':
+                # Use Daily Log parser for simple table-based format
+                self.log_and_print(f"[DAILY_LOG] Detected simple Daily Log format, using Daily Log parser")
+                # Pass fuel transactions if available for cross-referencing
+                library_result = self.daily_log_parser.parse_daily_log(text_content, file_name, self.all_fuel_transactions)
+            elif 'samsara' in text_content.lower() or 'fleet' in text_content.lower():
+                self.log_and_print(f"[SAMSARA] Detected Samsara ELD format, using direct parser")
+                library_result = self.samsara_parser.parse_samsara_data(text_content, file_name)
+            else:
+                # For non-Samsara files, try to use Samsara parser anyway (it may still work)
+                self.log_and_print(f"[LIBRARY] Attempting library parsing for non-Samsara file")
+                library_result = self.samsara_parser.parse_samsara_data(text_content, file_name)
+            
+            # Capture library response data
+            parser_used = 'daily_log_direct' if self.current_pdf_type == 'simple' else ('samsara_direct' if 'samsara' in text_content.lower() else 'library_generic')
+            library_response = {
+                'file_name': file_name,
+                'library_result': library_result,
+                'timestamp': datetime.now().isoformat(),
+                'success': library_result is not None,
+                'parser_used': parser_used
+            }
+            self.library_response_data.append(library_response)
+            self.log_and_print(f"[LIBRARY_RESPONSE] Captured response for {file_name} using {library_response['parser_used']}")
+            
+            if library_result and library_result.get('extraction_method') in ['samsara_direct', 'library_based', 'daily_log_direct']:
+                # NEW FORMAT: Store the complete library result for accurate violation detection
+                # This preserves the detailed daily_entries structure with precise timing and duration data
                 
                 # Add driver information
                 driver_info = {
-                    'driver_name': ai_result.get('driver_name', 'Unknown'),
-                    'driver_id': ai_result.get('driver_id', ''),
-                    'carrier_name': ai_result.get('carrier_name', ''),
+                    'driver_name': library_result.get('driver_name', 'Unknown'),
+                    'driver_id': library_result.get('driver_id', ''),
+                    'carrier_name': library_result.get('carrier_name', ''),
                     'log_period': {
-                        'start_date': ai_result.get('start_date', ''),
-                        'end_date': ai_result.get('end_date', '')
+                        'start_date': library_result.get('start_date', ''),
+                        'end_date': library_result.get('end_date', '')
                     },
                     'summary': {
-                        'total_driving_hours': ai_result.get('total_driving_hours', 0),
-                        'total_on_duty_hours': ai_result.get('total_on_duty_hours', 0),
-                        'total_off_duty_hours': ai_result.get('total_off_duty_hours', 0),
-                        'total_miles': ai_result.get('total_miles', 0)
+                        'total_driving_hours': library_result.get('total_driving_hours', 0),
+                        'total_on_duty_hours': library_result.get('total_on_duty_hours', 0),
+                        'total_off_duty_hours': library_result.get('total_off_duty_hours', 0),
+                        'total_miles': library_result.get('total_miles', 0)
                     },
-                    'ai_detected_violations': ai_result.get('violations', []),
-                    'violation_types': ai_result.get('violation_types', [])
+                    'library_detected_violations': library_result.get('violations', []),
+                    'violation_types': library_result.get('violation_types', [])
                 }
                 
-                # Store the enhanced data
+                # Store the NEW FORMAT: Complete library result with daily_entries structure
+                # This allows violation detection to access accurate timing and duration data
                 self.extracted_data['driver_logs'].append({
                     'type': 'driver_log',
                     'file_name': file_name,
-                    'entries': entries,
-                    'ai_enhanced': True,
+                    'library_result': library_result,  # Store complete library result for violation detection
+                    'library_enhanced': True,
                     'driver_info': driver_info,
-                    'extraction_method': 'openai',
-                    'extracted_at': ai_result.get('extracted_at', datetime.now().isoformat())
+                    'extraction_method': library_result.get('extraction_method', 'library_based'),
+                    'extracted_at': library_result.get('extracted_at', datetime.now().isoformat())
                 })
                 
-                print(f"[SUCCESS] AI extracted {len(entries)} driver log entries from {file_name}")
+                # Count total entries from daily_entries for logging
+                total_entries = sum(len(day.get('entries', [])) for day in library_result.get('daily_entries', []))
+                print(f"[SUCCESS] Library extracted {total_entries} driver log entries from {file_name}")
                 print(f"[INFO] Driver: {driver_info['driver_name']}, Period: {driver_info['log_period']['start_date']} to {driver_info['log_period']['end_date']}")
                 
-                # Also store raw AI result for detailed analysis
+                # Also store raw library result for detailed analysis
                 self.extracted_data['audit_summaries'].append({
-                    'type': 'ai_rods_analysis',
+                    'type': 'library_rods_analysis',
                     'file_name': file_name,
-                    'content': ai_result,
+                    'content': library_result,
                     'processed_at': datetime.now().isoformat()
                 })
                 
+                return True  # Success - library extraction worked
+                
             else:
-                # Fallback to traditional extraction if AI fails
-                print(f"[WARNING] AI extraction failed for {file_name}, falling back to traditional method")
-                self._extract_driver_log_data(text_content, file_name)
+                # Only use fallback if we don't already have successful library-based data
+                # Check if we already have library_result data for this file
+                existing_library_data = any(
+                    log.get('library_result') and log.get('file_name') == file_name 
+                    for log in self.extracted_data['driver_logs']
+                )
+                
+                if not existing_library_data:
+                    # Fallback to traditional extraction if library fails and no library data exists
+                    print(f"[WARNING] Library extraction failed for {file_name}, falling back to traditional method")
+                    self._extract_driver_log_data(text_content, file_name)
+                    return False  # Failed - had to use fallback
+                else:
+                    print(f"[INFO] Skipping fallback for {file_name} - already have accurate library-based data")
+                    return True  # Success - we have library-based data
                 
         except Exception as e:
-            print(f"[ERROR] AI extraction error for {file_name}: {str(e)}")
-            # Fallback to traditional extraction
-            self._extract_driver_log_data(text_content, file_name)
-    
-    def _extract_driver_log_from_excel_with_ai(self, df, file_name, sheet_name):
-        """Extract driver log data from Excel using AI enhancement"""
-        try:
-            print(f"[AI] Processing Excel driver log with AI: {file_name} (sheet: {sheet_name})")
+            print(f"[ERROR] Library extraction error for {file_name}: {str(e)}")
             
-            # Convert DataFrame to text for AI processing
+            # Only use fallback if we don't already have successful library-based data
+            existing_library_data = any(
+                log.get('library_result') and log.get('file_name') == file_name 
+                for log in self.extracted_data['driver_logs']
+            )
+            
+            if not existing_library_data:
+                # Fallback to traditional extraction only if no library data exists
+                print(f"[FALLBACK] Using traditional extraction for {file_name}")
+                self._extract_driver_log_data(text_content, file_name)
+                return False  # Failed - had to use fallback
+            else:
+                print(f"[INFO] Skipping fallback for {file_name} - already have accurate library-based data")
+                return True   # Success - we have library-based data
+    
+    def _extract_driver_log_from_excel_with_library(self, df, file_name, sheet_name):
+        """Extract driver log data from Excel using library enhancement"""
+        try:
+            print(f"[LIBRARY] Processing Excel driver log with library parser: {file_name} (sheet: {sheet_name})")
+            
+            # Convert DataFrame to text for library processing
             df_text = df.to_string(index=False)
             
             # Create a combined text that includes sheet info
@@ -1011,37 +1920,37 @@ Data:
 {df_text}
 """
             
-            # Use OpenAI service to extract structured data
-            ai_result = self.openai_service.extract_rods_data(combined_text, file_name)
+            # Use library-based parsing for Excel data
+            library_result = self.samsara_parser.parse_samsara_data(combined_text, file_name)
             
-            if ai_result and ai_result.get('extraction_method') == 'openai':
-                # Convert AI result to our expected format
+            if library_result and library_result.get('extraction_method') in ['samsara_direct', 'library_based']:
+                # Convert library result to our expected format
                 log_data = {
                     'type': 'driver_log',
                     'file_name': file_name,
                     'sheet_name': sheet_name,
-                    'extraction_method': 'openai_excel',
-                    'driver_name': ai_result.get('driver_name', ''),
-                    'driver_id': ai_result.get('driver_id', ''),
-                    'carrier_name': ai_result.get('carrier_name', ''),
-                    'log_period': ai_result.get('log_period', {}),
-                    'entries': ai_result.get('entries', []),
-                    'summary': ai_result.get('summary', {}),
-                    'violations': ai_result.get('violations', []),
+                    'extraction_method': 'library_excel',
+                    'driver_name': library_result.get('driver_name', ''),
+                    'driver_id': library_result.get('driver_id', ''),
+                    'carrier_name': library_result.get('carrier_name', ''),
+                    'log_period': library_result.get('log_period', {}),
+                    'entries': library_result.get('entries', []),
+                    'summary': library_result.get('summary', {}),
+                    'violations': library_result.get('violations', []),
                     'processed_at': datetime.now().isoformat()
                 }
                 
                 # Add to extracted data
                 self.extracted_data['driver_logs'].append(log_data)
-                print(f"[SUCCESS] AI-enhanced Excel driver log extraction completed: {file_name}")
+                print(f"[SUCCESS] Library-enhanced Excel driver log extraction completed: {file_name}")
                 return True
             else:
                 # Fallback to traditional Excel processing
-                print(f"[WARNING] AI extraction failed, falling back to traditional Excel processing: {file_name}")
+                print(f"[WARNING] Library extraction failed, falling back to traditional Excel processing: {file_name}")
                 return self._extract_driver_log_from_excel(df, file_name)
                 
         except Exception as e:
-            print(f"[ERROR] AI Excel driver log extraction error for {file_name}: {str(e)}")
+            print(f"[ERROR] Library Excel driver log extraction error for {file_name}: {str(e)}")
             # Fallback to traditional processing
             return self._extract_driver_log_from_excel(df, file_name)
     

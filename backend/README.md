@@ -1,12 +1,12 @@
-# AI Audit Engine - Python Backend
+# FMCSA Audit Engine - Python Backend
 
-This is the Python backend for the CDLManager AI Auditing Agent, designed to process driver logs, fuel receipts, and Bills of Lading for FMCSA compliance analysis.
+This is the Python backend for the CDLManager Auditing System, designed to process driver logs, fuel receipts, and Bills of Lading for FMCSA compliance analysis using accurate library-based parsing.
 
 ## Features
 
 - **File Processing**: Parse PDFs, JPEGs, PNGs, and Excel files
 - **FMCSA Compliance**: Apply Hours-of-Service (HOS) rules and other FMCSA regulations
-- **AI-Powered Analysis**: Extract and normalize driver data using OCR and text processing
+- **Library-Based Analysis**: Extract and normalize driver data using accurate parsing libraries
 - **Violation Detection**: Identify HOS violations, form/manner violations, and log falsification
 - **Report Generation**: Generate detailed CSV reports with compliance scores
 - **RESTful API**: Full API for integration with the Vue.js frontend
@@ -18,7 +18,7 @@ backend/
 ├── app.py              # Main Flask application
 ├── audit_engine.py     # Main audit processing engine
 ├── file_processor.py   # File parsing and data extraction
-├── fmcsa_rules.py      # FMCSA compliance rules engine
+├── fmcsa_rules_improved.py  # FMCSA compliance rules engine
 ├── database.py         # Database models and configuration
 ├── config.py           # Application configuration
 ├── init_db.py          # Database initialization script
